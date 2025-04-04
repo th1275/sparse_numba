@@ -100,16 +100,16 @@ class CustomBuildExt(build_ext):
 
             import shutil
 
-            # Copy SuiteSparse DLLs
-            if os.path.exists(suitesparse_bin_dir):
-                for dll_file in os.listdir(suitesparse_bin_dir):
-                    if dll_file.endswith('.dll'):
-                        dest_path = os.path.join(suitesparse_target_dir, dll_file)
-                        shutil.copy(
-                            os.path.join(suitesparse_bin_dir, dll_file),
-                            dest_path
-                        )
-                        print(f"Copied SuiteSparse DLL: {dll_file} to {dest_path}")
+            # # Copy SuiteSparse DLLs
+            # if os.path.exists(suitesparse_bin_dir):
+            #     for dll_file in os.listdir(suitesparse_bin_dir):
+            #         if dll_file.endswith('.dll'):
+            #             dest_path = os.path.join(suitesparse_target_dir, dll_file)
+            #             shutil.copy(
+            #                 os.path.join(suitesparse_bin_dir, dll_file),
+            #                 dest_path
+            #             )
+            #             print(f"Copied SuiteSparse DLL: {dll_file} to {dest_path}")
 
             # Copy OpenBLAS DLLs
             if os.path.exists(openblas_bin_dir):
@@ -126,7 +126,7 @@ class CustomBuildExt(build_ext):
 # Package data to include DLLs but not lib and include files
 package_data = {
     'sparse_numba': [
-        'vendor/suitesparse/bin/*.dll',
+        # 'vendor/suitesparse/bin/*.dll',
         'vendor/openblas/bin/*.dll'
     ],
 }
@@ -170,7 +170,7 @@ package_data = {
 
 setup(
     name="sparse_numba",
-    version="0.1.4",
+    version="0.1.5",
     description="Customized sparse solver with Numba support",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -189,7 +189,7 @@ setup(
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: BSD 3-Clause License",
+        "License :: OSI Approved :: BSD License",
         "Operating System :: Microsoft :: Windows",
     ],
     # Include DLLs in multiple locations with include_package_data

@@ -26,18 +26,30 @@ if sys.platform.startswith('win'):
         # package_dir.parent / "vendor" / "suitesparse" / "bin",
         # package_dir.parent / "vendor" / "openblas" / "bin",
     ]
+    # Check system path locations
+    suitesparse_sys_env = os.environ.get('SUITESPARSE_BIN', '')
+    if suitesparse_sys_env:
+        dll_paths.append(Path(suitesparse_sys_env))
 
     # For debugging: log all paths we're checking
     logger.debug("Checking for DLLs in the following paths:")
 
     # Track if we found any DLL directories
     found_dll_paths = []
+    found_suitesparse = False
 
     # Add all existing paths to the system PATH
     for dll_path in dll_paths:
         if dll_path.exists():
             logger.info(f"Found DLL directory: {dll_path}")
             found_dll_paths.append(dll_path)
+
+            # Check if this path contains SuiteSparse DLLs
+            if dll_path.name == "bin" and dll_path.parent.name == "suitesparse":
+                if any(dll_file.name.startswith(('libumfpack', 'umfpack'))
+                       for dll_file in dll_path.glob('*.dll')):
+                    found_suitesparse = True
+                    logger.info(f"Found SuiteSparse DLLs in: {dll_path}")
 
             # Set DLL directory on newer Python versions (3.8+)
             if hasattr(os, 'add_dll_directory'):
@@ -52,12 +64,21 @@ if sys.platform.startswith('win'):
                 os.environ['PATH'] = str(dll_path) + os.pathsep + os.environ['PATH']
                 logger.debug(f"Added to PATH: {dll_path}")
 
-    if not found_dll_paths:
-        logger.warning("No DLL directories found! Library may not work correctly.")
+    if not found_suitesparse:
+        logger.warning(
+            "\n" + "=" * 80 + "\n" +
+            "SuiteSparse DLLs were not found! This package requires SuiteSparse to work correctly.\n" +
+            "Please install SuiteSparse and make sure the DLLs are in your system PATH, or:\n" +
+            "1. Download SuiteSparse and place the DLLs in one of these locations:\n" +
+            f"   - {package_dir}/vendor/suitesparse/bin\n" +
+            f"   - {package_dir.parent}/vendor/suitesparse/bin\n" +
+            "2. Set the SUITESPARSE_BIN environment variable to the directory containing SuiteSparse DLLs\n" +
+            "=" * 80
+        )
     else:
-        logger.info(f"Added {len(found_dll_paths)} DLL directories to the path")
+        logger.info("SuiteSparse DLLs found. Package should work correctly.")
 
-    # Log the current PATH for debugging
+        # Log the current PATH for debugging
     logger.debug(f"Updated PATH: {os.environ['PATH']}")
 
 
