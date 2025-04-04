@@ -1,0 +1,14 @@
+include sparse_numba/__init__.py
+include LICENSE
+include README.md
+include sparse_numba/sparse_umfpack/*.py
+include sparse_numba/conversion/*.py
+
+# Include only the DLLs needed at runtime
+include vendor/suitesparse/bin/*.dll
+include vendor/openblas/bin/*.dll
+
+# Exclude source files from wheel package (keep them in sdist)
+exclude sparse_numba/sparse_umfpack/*.c
+exclude sparse_numba/sparse_umfpack/*.h
+exclude sparse_numba/sparse_umfpack/*.pyx

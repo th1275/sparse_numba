@@ -1,0 +1,20 @@
+/vendor/suitesparse/include/
+/vendor/suitesparse/lib/
+
+/vendor/openblas/include/
+/vendor/openblas/lib/
+
+/build/
+/.venv/
+/dist/
+
+/2025-03-31_12-07-12_Claude Chat_Distributing UMFPACK-based Python Wrapper with Wheels....md
+/project_structure.txt
+/.venv_structure.txt
+/basic_test.py
+
+
+
+/vendor/suitesparse/bin/*
+!/vendor/suitesparse/bin/.placeholder
+/sparse_numba.egg-info/
