@@ -26,6 +26,13 @@ and significantly improving multi-task solving speed.
 ```bash
 pip install sparse-numba
 ```
+Due to the license issue, this package cannot include DLLs from umfpack. To run the existing function in this package, the user needs to install umfpack by yourself and add the necessary DLLs to the system path or put under: 
+```
+.venv/site-packages/sparse_numba/vendor/suitesparse/bin
+```
+
+Support for other solvers might be added soon. Sorry for this inconvenience.
+
 
 ### Installing from source (Windows)
 
@@ -40,8 +47,15 @@ If installing from source on Windows, you need to have MinGW installed and confi
      [build]
      compiler=mingw32
      ```
+4. Then:
+ ```bash
+python -m build --wheel
+pip install dist/sparse_numba-%YOURVERSION%.whl
+```
+ 
 
 **Note:** Despite installing MinGW-w64 (64-bit), the compiler setting is still `mingw32`. This is the correct name for the distutils compiler specification and does not affect the bitness of the compiled extension.
+
 
 ## Usage
 
@@ -107,6 +121,9 @@ offer more comprehensive implementations with parallel computing features.
 ## License
 
 BSD 3-Clause License
+
+### License Statement of OpenBLAS:
+DLL of OpenBLAS can be obtained from: https://github.com/OpenMathLib/OpenBLAS
 
 ## Citation
 
