@@ -162,7 +162,4 @@ If you use Sparse_Numba in your research, you can consider to cite:
 
 As an entry-level (or baby-level) developer, I still need more time to figure out the workflow. Due to my limited availability, this tool will also be updated very slowly. Please be patient. 
 
-
-
-
 Thank you!
