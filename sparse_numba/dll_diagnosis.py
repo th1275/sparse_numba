@@ -8,7 +8,7 @@ python diagnose_dll.py
 #  [sparse_numba] (C)2025-2025 Tianqi Hong
 #
 #  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the MIT License.
+#  it under the terms of the BSD License.
 #
 #  File name: dll_diagnosis.py
 

@@ -30,8 +30,7 @@ Due to the license issue, this package cannot include DLLs from umfpack. To run 
 ```
 .venv/site-packages/sparse_numba/vendor/suitesparse/bin
 ```
-
-Support for other solvers might be added soon. Sorry for this inconvenience.
+Support for SuperLU solver has been added in the current version (0.1.6). Other solvers might be added soon. Sorry for this inconvenience.
 
 
 ### Installing from source (Windows)
@@ -61,7 +60,7 @@ pip install dist/sparse_numba-%YOURVERSION%.whl
 
 ```python
 import numpy as np
-from sparse_numba import umfpack_solve_csc, umfpack_solve_coo, umfpack_solve_csr
+from sparse_numba import umfpack_solve_csc, superlu_solve_csc
 
 # Example with CSC format (Compressed Sparse Column)
 # Create a sparse matrix in CSC format
@@ -71,8 +70,13 @@ data = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
 b = np.array([1.0, 2.0, 3.0])
 
 # Solve the linear system Ax = b
-x = umfpack_solve_csc(data, indices, indptr, b)
-print(x)
+    # umfpack solver
+x_umfpack = umfpack_solve_csc(data, indices, indptr, b)
+print(x_umfpack)
+
+    # superlu solver
+x_superlu = superlu_solve_csc(data, indices, indptr, b)
+print(x_superlu)
 
 # More examples for COO and CSR formats...
 ```
@@ -83,16 +87,28 @@ print(x)
 
 We compare the computational speed with 
 SciPy for solving single problems of different sizes. 
-The test result on an Intel Ultra 7 258V processor:
+The test result on an Intel Ultra 7 258V processor.
+1. UMFPACK V.S. SciPy (spsolve):
 
-![Single Problem Benchmark](benchmark_single_problem.png)
+![Single Problem Benchmark](benchmark_single_problem_umfpack.png)
+
+2. SuperLU V.S. SciPy (spsolve):
+
+![Single Problem Benchmark](benchmark_single_problem_superlu.png)
 
 ### Multi-task Performance
 
-We compare the multi-task performance of Sparse_Numba with sequential SciPy:
+We compare the multi-task performance of Sparse_Numba with sequential SciPy.
 
-![Parallel Solver Benchmark](benchmark_parallel_solver.png)
-![Speedup Factor](speedup_parallel_solver.png)
+3. UMFPACK V.S. SciPy (spsolve):
+
+![Parallel Solver Benchmark](benchmark_parallel_solver_umfpack.png) 
+![Speedup Factor](speedup_parallel_solver_umfpack.png)
+
+4. SuperLU V.S. Scipy (spsolve):
+
+![Parallel Solver Benchmark](benchmark_parallel_solver_superlu.png) 
+![Speedup Factor](speedup_parallel_solver_superlu.png)
 
 **Note:** The initialization time is included in these benchmarks. 
 This is why the Numba-compatible function is slower initially, 
@@ -102,12 +118,13 @@ but the performance advantage becomes evident as parallelization takes effect.
 
 ### Current Features
 - UMFPACK solver integration with Numba compatibility
+- SuperLU solver integration with Numba compatibility
 - Support for CSC, COO, and CSR sparse matrix formats
 - Efficient parallel solving for multiple systems
 
 ### Limitations
-- Currently, only the UMFPACK solver is integrated
-- SuperLU and other solvers are under development
+- The UMFPACK DLL files are not redistributed in this tool
+- Other solvers are under development
 - Performance may be limited for extremely ill-conditioned matrices
 - **Only developed for Windows**, other platform will be supported soon
 
@@ -123,7 +140,8 @@ offer more comprehensive implementations with parallel computing features.
 BSD 3-Clause License
 
 ### License Statement of OpenBLAS:
-DLL of OpenBLAS can be obtained from: https://github.com/OpenMathLib/OpenBLAS
+DLL of OpenBLAS can be obtained from build: https://github.com/OpenMathLib/OpenBLAS
+DLL of SuperLU can be obtained from build: https://github.com/xiaoyeli/superlu
 
 ## Citation
 

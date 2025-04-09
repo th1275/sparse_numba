@@ -26,3 +26,8 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+OpenBlas is under BSD 3-Clause License and it is avalabile at: https://github.com/OpenMathLib/OpenBLAS
+
+SuperLU is under the License at https://github.com/xiaoyeli/superlu?tab=License-1-ov-file and the package is avaliable at: https://github.com/xiaoyeli/superlu

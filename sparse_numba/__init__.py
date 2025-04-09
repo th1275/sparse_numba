@@ -1,5 +1,5 @@
 """
-Sparse Numba UMFPACK - Fast UMFPACK sparse solver with Numba support
+Sparse Numba - Fast sparse solver with Numba support
 __init__.py under sparse_numba.sparse_numba
 """
 
@@ -8,6 +8,9 @@ import sys
 import site
 import logging
 from pathlib import Path
+
+# from sparse_numba.sparse_superlu import superlu_numba_interface
+# from sparse_numba.sparse_superlu.superlu_numba_interface import superlu_solve_csr
 
 # Setup basic logging
 logging.basicConfig(level=logging.WARNING)
@@ -21,6 +24,7 @@ if sys.platform.startswith('win'):
         # Check vendor directory in development mode
         package_dir / "vendor" / "suitesparse" / "bin",
         package_dir / "vendor" / "openblas" / "bin",
+        package_dir / "vendor" / "superlu" / "bin",
         # Check next to the package in site-packages (wheel installation)
         # Check at site-packages level (sibling to sparse_numba)
         # package_dir.parent / "vendor" / "suitesparse" / "bin",
@@ -82,13 +86,19 @@ if sys.platform.startswith('win'):
     logger.debug(f"Updated PATH: {os.environ['PATH']}")
 
 
-# Import UMFPACK solver
+# Import sparse solver
 try:
-    # Export main functions
+    # Export main functions - UMFPACK
     from sparse_numba.sparse_umfpack.umfpack_numba_interface import (
         umfpack_solve_csc,
         umfpack_solve_coo,
         umfpack_solve_csr
+    )
+    # Export main functions - SuperLU
+    from sparse_numba.sparse_superlu.superlu_numba_interface import(
+        superlu_solve_csc,
+        superlu_solve_coo,
+        superlu_solve_csr
     )
 
     # Export conversion functions
@@ -99,6 +109,9 @@ try:
         'umfpack_solve_csc',
         'umfpack_solve_coo',
         'umfpack_solve_csr',
+        'superlu_solve_csc',
+        'superlu_solve_coo',
+        'superlu_solve_csr',
         'convert_coo_to_csc',
         'convert_csr_to_csc',
         'benchmark_single_umf',

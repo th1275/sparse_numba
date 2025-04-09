@@ -1,182 +1,210 @@
+"""
+Example usage of the SuperLU-based sparse solver.
+This demonstrates how to use the solver with different sparse matrix formats.
+"""
+
+#  [sparse_numba] (C)2025-2025 Tianqi Hong
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the BSD License.
+#
+#  File name: test_example_superlu.py
+
+
 import numpy as np
-from numba import njit
-import time
-from superlu_numba_interface import superlu_solve_csr, superlu_solve_coo, superlu_solve_csr_revised
+import random
+from sparse_numba import (
+    superlu_solve_csc,
+    superlu_solve_csr,
+    superlu_solve_coo
+)
+
 import scipy.sparse as sp
-from scipy.sparse.linalg import spsolve
+from sparse_numba.conversion.matrix_conversion_numba import check_matrix_properties
 
 # Import the revised CSR solver
-# You'll need to save the fixed-superlu-interface-2.py file first
-# from fixed_superlu_interface_2 import superlu_solve_csr_revised
 
 
-def main():
+def example_with_random_matrix():
     """
-    Testing Numba-compatible SuperLU with revised CSR solver
+    Example with a random sparse matrix.
     """
-    print("Testing Numba-compatible SuperLU solver with revised CSR solver")
-
-    # Create a simple test problem
+    # Create a random sparse matrix (relatively well-conditioned)
     n = 100
-    print(f"Creating a sparse matrix of size {n}x{n}")
+    density = 0.01
+    A_coo = sp.random(n, n, density=density, format='coo', dtype=float)
 
-    # Create a banded matrix in COO format (same as before)
-    row_indices = []
-    col_indices = []
-    data = []
+    # Add diagonal dominance to ensure it's non-singular
+    diag_indices = np.arange(n)
+    A_coo.data = np.concatenate([A_coo.data, np.ones(n) * 10])
+    A_coo.row = np.concatenate([A_coo.row, diag_indices])
+    A_coo.col = np.concatenate([A_coo.col, diag_indices])
 
-    # Main diagonal and two off-diagonals
-    for i in range(n):
-        # Main diagonal
-        row_indices.append(i)
-        col_indices.append(i)
-        data.append(2.0)
+    # Convert to different formats
+    A_csr = A_coo.tocsr()
+    A_csc = A_coo.tocsc()
 
-        # Lower diagonal
-        if i > 0:
-            row_indices.append(i)
-            col_indices.append(i - 1)
-            data.append(-1.0)
+    # Create a right-hand side
+    x_true = np.ones(n)
+    b = A_csc @ x_true
 
-        # Upper diagonal
-        if i < n - 1:
-            row_indices.append(i)
-            col_indices.append(i + 1)
-            data.append(-1.0)
+    print(f"Matrix size: {n}x{n}, NNZ: {len(A_coo.data)}")
 
-    # Convert to numpy arrays
-    row_indices = np.array(row_indices, dtype=np.int32)
-    col_indices = np.array(col_indices, dtype=np.int32)
-    data = np.array(data, dtype=np.float64)
+    # Solve using CSC format
+    x_csc, info_csc = superlu_solve_csc(
+        A_csc.data, A_csc.indices, A_csc.indptr, b
+    )
+    print(f"CSC solve status: {info_csc}")
+    print(f"CSC solution error: {np.linalg.norm(x_csc - x_true)}")
 
-    # Create the SciPy sparse matrix (for reference)
-    A_scipy = sp.coo_matrix((data, (row_indices, col_indices)), shape=(n, n))
-    A_scipy_csr = A_scipy.tocsr()
+    # Solve using CSR format
+    x_csr, info_csr = superlu_solve_csr(
+        A_csr.data, A_csr.indices, A_csr.indptr, b
+    )
+    print(f"CSR solve status: {info_csr}")
+    print(f"CSR solution error: {np.linalg.norm(x_csr - x_true)}")
 
-    # Create a right-hand side vector
-    b = np.ones(n, dtype=np.float64)
-
-    # === SciPy reference solution ===
-    print("\nSolving with SciPy (reference)...")
-    start_time = time.time()
-    x_scipy = spsolve(A_scipy_csr, b)  # Using CSR to avoid warning
-    scipy_time = time.time() - start_time
-    print(f"SciPy solution time: {scipy_time:.6f} seconds")
-
-    # === Custom SuperLU with COO format ===
-    print("\nSolving with COO format...")
-    start_time = time.time()
-    x_coo, info_coo = superlu_solve_coo(row_indices, col_indices, data, (n, n), b)
-    coo_time = time.time() - start_time
-    print(f"COO format solution time: {coo_time:.6f} seconds")
-    print(f"Solution status: {'Success' if info_coo == 0 else 'Failed'}")
-
-    # === Convert to CSR format ===
-    print("\nConverting to CSR format...")
-    csr_data, csr_indices, csr_indptr = coo_to_csr(data, row_indices, col_indices, n)
-
-    # === Original CSR solver ===
-    print("\nSolving with original CSR solver...")
-    start_time = time.time()
-    x_csr_original, info_csr_original = superlu_solve_csr(csr_data, csr_indices, csr_indptr, b)
-    csr_original_time = time.time() - start_time
-    print(f"Original CSR format solution time: {csr_original_time:.6f} seconds")
-    print(f"Solution status: {'Success' if info_csr_original == 0 else 'Failed'}")
-
-    # === Revised CSR solver ===
-    print("\nSolving with revised CSR solver...")
-    start_time = time.time()
-    x_csr_revised, info_csr_revised = superlu_solve_csr_revised(csr_data, csr_indices, csr_indptr, b)
-    csr_revised_time = time.time() - start_time
-    print(f"Revised CSR format solution time: {csr_revised_time:.6f} seconds")
-    print(f"Solution status: {'Success' if info_csr_revised == 0 else 'Failed'}")
-
-    # === Compare solutions ===
-    print("\nComparing solutions:")
-    coo_scipy_diff = np.max(np.abs(x_coo - x_scipy))
-    csr_orig_scipy_diff = np.max(np.abs(x_csr_original - x_scipy))
-    csr_revised_scipy_diff = np.max(np.abs(x_csr_revised - x_scipy))
-    coo_csr_orig_diff = np.max(np.abs(x_coo - x_csr_original))
-    coo_csr_revised_diff = np.max(np.abs(x_coo - x_csr_revised))
-
-    print(f"Max difference between COO and SciPy: {coo_scipy_diff:.6e}")
-    print(f"Max difference between original CSR and SciPy: {csr_orig_scipy_diff:.6e}")
-    print(f"Max difference between revised CSR and SciPy: {csr_revised_scipy_diff:.6e}")
-    print(f"Max difference between COO and original CSR: {coo_csr_orig_diff:.6e}")
-    print(f"Max difference between COO and revised CSR: {coo_csr_revised_diff:.6e}")
-
-    if coo_csr_revised_diff < 1e-10:
-        print("COO and revised CSR solutions match!")
-    else:
-        print("WARNING: COO and revised CSR solutions still differ!")
-
-    # Check solution accuracy (for this problem, the solution should be all 1's)
-    expected = np.ones_like(x_scipy)
-    scipy_error = np.max(np.abs(x_scipy - expected))
-    coo_error = np.max(np.abs(x_coo - expected))
-    csr_orig_error = np.max(np.abs(x_csr_original - expected))
-    csr_revised_error = np.max(np.abs(x_csr_revised - expected))
-
-    print(f"\nMaximum solution errors:")
-    print(f"SciPy: {scipy_error:.6e}")
-    print(f"COO: {coo_error:.6e}")
-    print(f"Original CSR: {csr_orig_error:.6e}")
-    print(f"Revised CSR: {csr_revised_error:.6e}")
-
-    print("\nNumba-compatible SuperLU testing completed!")
+    # Solve using COO format
+    x_coo, info_coo = superlu_solve_coo(
+        A_coo.row, A_coo.col, A_coo.data, A_coo.shape, b
+    )
+    print(f"COO solve status: {info_coo}")
+    print(f"COO solution error: {np.linalg.norm(x_coo - x_true)}")
 
 
-@njit
-def coo_to_csr(data, row, col, n_rows):
+def example_with_ill_conditioned_matrix():
     """
-    Convert COO format to CSR format.
-
-    Parameters:
-    -----------
-    data : ndarray
-        Values in COO format
-    row : ndarray
-        Row indices in COO format
-    col : ndarray
-        Column indices in COO format
-    n_rows : int
-        Number of rows
-
-    Returns:
-    --------
-    csr_data : ndarray
-        Values in CSR format
-    csr_indices : ndarray
-        Column indices in CSR format
-    csr_indptr : ndarray
-        Row pointers in CSR format
+    Example with an ill-conditioned matrix to demonstrate robustness.
     """
-    nnz = len(data)
+    # # Create an ill-conditioned matrix
+    # n = 100
+    #
+    # # Start with a random sparse matrix
+    # A_coo = sp.random(n, n, density=0.05, format='coo', dtype=float)
+    #
+    # # Add small values to the diagonal to make it ill-conditioned
+    # diag_indices = np.arange(n)
+    # small_diags = np.ones(n) * 1e-8
+    # small_diags[0] = 1.0  # One normal value to create ill-conditioning
+    #
+    # A_coo.data = np.concatenate([A_coo.data, small_diags])
+    # A_coo.row = np.concatenate([A_coo.row, diag_indices])
+    # A_coo.col = np.concatenate([A_coo.col, diag_indices])
+    #
+    # # Convert to CSC format (needed for check_matrix_properties)
+    # A_csc = A_coo.tocsc()
+    # Parameters for the test system
+    n = 1000  # system size
+    density = 0.1  # density for the random sparse matrix
+    random.seed(42)
+    # Create a random sparse matrix (n x n) in CSR format
+    A_coo = sp.rand(n, n, density=density, format='coo', dtype=np.float64)
+    # To avoid singular systems, add a diagonal shift
+    A_coo = A_coo + 0.1 * sp.eye(n, format='coo')
 
-    # Initialize CSR arrays
-    csr_data = np.zeros_like(data)
-    csr_indices = np.zeros_like(col)
-    csr_indptr = np.zeros(n_rows + 1, dtype=np.int32)
+    # A_sparse = 20*sp.eye(n, format='csr')
 
-    # Count number of elements in each row
-    for i in range(nnz):
-        csr_indptr[row[i] + 1] += 1
+    A_dense = A_coo.toarray()
+    cond_A = np.linalg.cond(A_dense)
 
-    # Cumulative sum to get row pointers
-    for i in range(1, n_rows + 1):
-        csr_indptr[i] += csr_indptr[i - 1]
+    # # Convert to CSC format (needed for check_matrix_properties)
+    A_csc = A_coo.tocsc()
 
-    # Fill in CSR data and indices
-    row_counts = np.zeros(n_rows, dtype=np.int32)
-    for i in range(nnz):
-        r = row[i]
-        pos = csr_indptr[r] + row_counts[r]
-        csr_data[pos] = data[i]
-        csr_indices[pos] = col[i]
-        row_counts[r] += 1
+    # Check matrix properties
+    is_singular, condition_est, diag_ratio = check_matrix_properties(
+        A_csc.data, A_csc.indices, A_csc.indptr, n
+    )
 
-    return csr_data, csr_indices, csr_indptr
+    print(f"\nIll-conditioned matrix example:")
+    print(f"Matrix size: {n}x{n}, NNZ: {len(A_coo.data)}")
+    print(f"Is matrix singular? {is_singular}")
+    print(f"Estimated condition number: {condition_est}")
+    print("\nCondition number of A:", cond_A)
+    print(f"Diagonal ratio (min/max): {diag_ratio}")
+
+    # Create a right-hand side
+    x_true = np.ones(n)
+    b = A_csc @ x_true
+
+    # Solve using CSC format
+    x_csc, info_csc = superlu_solve_csc(
+        A_csc.data, A_csc.indices, A_csc.indptr, b
+    )
+
+    # Calculate relative error
+    rel_error = np.linalg.norm(x_csc - x_true) / np.linalg.norm(x_true)
+
+    print(f"SuperLU solve status: {info_csc}")
+    print(f"Relative solution error: {rel_error}")
+
+    # Compare with scipy.sparse.linalg.spsolve
+    try:
+        from scipy.sparse.linalg import spsolve
+        x_scipy = spsolve(A_csc, b)
+        scipy_rel_error = np.linalg.norm(x_scipy - x_true) / np.linalg.norm(x_true)
+        print(f"SciPy spsolve relative error: {scipy_rel_error}")
+    except Exception as e:
+        print(f"SciPy spsolve failed: {e}")
 
 
-if __name__ == "__main__":
-    main()
+def example_with_nearly_singular_matrix():
+    """
+    Example with a nearly singular matrix with missing diagonal elements.
+    """
+    # Create a matrix with some missing diagonal elements
+    n = 50
+    A = np.eye(n, dtype=float)
+
+    # Make a few rows/columns linearly dependent
+    A[10, :] = A[0, :]  # Row 10 same as row 0
+    A[20, :] = A[0, :] * 2  # Row 20 is 2 * row 0
+    A[30, :] = A[0, :] * 3  # Row 30 is 3 * row 0
+
+    # Remove some diagonal elements
+    A[5, 5] = 0
+    A[15, 15] = 0
+
+    # Convert to sparse
+    A_csc = sp.csc_matrix(A)
+
+    # Check matrix properties
+    is_singular, condition_est, diag_ratio = check_matrix_properties(
+        A_csc.data, A_csc.indices, A_csc.indptr, n
+    )
+
+    print(f"\nNearly singular matrix example:")
+    print(f"Matrix size: {n}x{n}, NNZ: {len(A_csc.data)}")
+    print(f"Is matrix singular? {is_singular}")
+    print(f"Estimated condition number: {condition_est}")
+    print(f"Diagonal ratio (min/max): {diag_ratio}")
+
+    # Create a right-hand side (should be in the range of A for a singular matrix)
+    x_true = np.ones(n)
+    b = A_csc @ x_true
+
+    # Solve using SuperLU
+    x_superlu, info_superlu = superlu_solve_csc(
+        A_csc.data, A_csc.indices, A_csc.indptr, b
+    )
+
+    # Calculate relative error
+    rel_error = np.linalg.norm(x_superlu - x_true) / np.linalg.norm(x_true)
+
+    print(f"SuperLU solve status: {info_superlu}")
+    print(f"Relative solution error: {rel_error}")
+
+    # Compare with SciPy
+    try:
+        from scipy.sparse.linalg import spsolve
+        x_scipy = spsolve(A_csc, b)
+        scipy_rel_error = np.linalg.norm(x_scipy - x_true) / np.linalg.norm(x_true)
+        print(f"SciPy spsolve relative error: {scipy_rel_error}")
+    except Exception as e:
+        print(f"SciPy spsolve failed: {e}")
+
+
+def run_test():
+    print("Running examples of SuperLU sparse solver...")
+    example_with_random_matrix()
+    example_with_ill_conditioned_matrix()
+    # example_with_nearly_singular_matrix()

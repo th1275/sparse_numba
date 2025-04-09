@@ -1,8 +1,15 @@
 /vendor/suitesparse/include/
 /vendor/suitesparse/lib/
+/vendor/suitesparse/bin/*
+!/vendor/suitesparse/bin/.placeholder
 
 /vendor/openblas/include/
 /vendor/openblas/lib/
+
+/vendor/superlu/include/
+/vendor/superlu/lib/
+/vendor/superlu/bin/*
+!/vendor/superlu/bin/.placeholder
 
 /build/
 /.venv/
@@ -13,8 +20,8 @@
 /.venv_structure.txt
 /basic_test.py
 
-
-
-/vendor/suitesparse/bin/*
-!/vendor/suitesparse/bin/.placeholder
 /sparse_numba.egg-info/
+/useful_commands.json
+
+
+

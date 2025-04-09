@@ -4,13 +4,6 @@ Benchmark 1: Comparing sparse_numba vs SciPy for single problem solution
 - Performance comparison
 """
 
-#  [sparse_numba] (C)2025-2025 Tianqi Hong
-#
-#  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the BSD License.
-#
-#  File name: benchmark_single_umf.py
-
 import numpy as np
 import time
 import matplotlib.pyplot as plt
@@ -18,7 +11,7 @@ from scipy import sparse
 from scipy.sparse.linalg import spsolve as scipy_spsolve
 
 # Import the sparse_numba solvers
-from sparse_numba import umfpack_solve_csc, umfpack_solve_coo, umfpack_solve_csr
+from sparse_numba import superlu_solve_csc, superlu_solve_coo, superlu_solve_csr
 
 def generate_sparse_problem(n, density=0.1, condition=1e3, seed=42):
     """Generate a sparse linear system Ax = b with known solution."""
@@ -88,7 +81,7 @@ def benchmark_single_problem(sizes, repetitions=5):
             # sparse_numba CSC solve
             try:
                 start = time.time()
-                x_numba_csc, _ = umfpack_solve_csc(A_csc.data, A_csc.indices, A_csc.indptr, b)
+                x_numba_csc, _ = superlu_solve_csc(A_csc.data, A_csc.indices, A_csc.indptr, b)
                 end = time.time()
                 numba_csc_times.append(end - start)
                 numba_csc_error = np.linalg.norm(x_numba_csc - x_true) / np.linalg.norm(x_true)
@@ -104,7 +97,7 @@ def benchmark_single_problem(sizes, repetitions=5):
             # sparse_numba COO solve
             try:
                 start = time.time()
-                x_numba_coo, _ = umfpack_solve_coo(A_coo.row, A_coo.col, A_coo.data, (n, n), b)
+                x_numba_coo, _ = superlu_solve_coo(A_coo.row, A_coo.col, A_coo.data, (n, n), b)
                 end = time.time()
                 numba_coo_times.append(end - start)
                 numba_coo_error = np.linalg.norm(x_numba_coo - x_true) / np.linalg.norm(x_true)
@@ -119,7 +112,7 @@ def benchmark_single_problem(sizes, repetitions=5):
             # sparse_numba CSR solve
             try:
                 start = time.time()
-                x_numba_csr, _ = umfpack_solve_csr(A_csr.data, A_csr.indices, A_csr.indptr, b)
+                x_numba_csr, _ = superlu_solve_csr(A_csr.data, A_csr.indices, A_csr.indptr, b)
                 end = time.time()
                 numba_csr_times.append(end - start)
                 numba_csr_error = np.linalg.norm(x_numba_csr - x_true) / np.linalg.norm(x_true)
@@ -175,7 +168,7 @@ def plot_benchmark_results(results):
     ax2.legend()
 
     plt.tight_layout()
-    plt.savefig('benchmark_single_problem.png', dpi=300)
+    plt.savefig('benchmark_single_problem_superlu.png', dpi=300)
     plt.show()
 
 def run_benchmark():

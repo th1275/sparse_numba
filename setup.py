@@ -21,7 +21,7 @@ if platform.system() == 'Windows':
     # Replace the function
     distutils.ccompiler.get_default_compiler = force_mingw
 
-# Define the extension modules - only UMFPACK for now
+# Define the extension modules - only UMFPACK and SuperLU for now
 extensions = [
     Extension(
         "sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
@@ -41,6 +41,27 @@ extensions = [
         ],
         library_dirs=[
             "vendor/suitesparse/lib",
+            "vendor/openblas/lib"
+        ],
+        extra_compile_args=["-O3"],  # GCC optimization flag
+    ),
+    Extension(
+        "sparse_numba.sparse_superlu.cy_superlu_wrapper",
+        sources=[
+            "sparse_numba/sparse_superlu/cy_superlu_wrapper.pyx",
+            "sparse_numba/sparse_superlu/superlu_wrapper.c"
+        ],
+        include_dirs=[
+            np.get_include(),
+            "sparse_numba/sparse_superlu",
+            "vendor/superlu/include",
+            "vendor/openblas/include"  # Fixed missing comma here
+        ],
+        libraries=[
+            "superlu", "openblas"
+        ],
+        library_dirs=[
+            "vendor/superlu/lib",
             "vendor/openblas/lib"
         ],
         extra_compile_args=["-O3"],  # GCC optimization flag
@@ -76,26 +97,32 @@ class CustomBuildExt(build_ext):
 
         # After building, copy DLLs to the package directory
         if platform.system() == 'Windows':
-            ext_path = self.get_ext_fullpath("sparse_numba.sparse_umfpack.cy_umfpack_wrapper")
+            ext_path_umfpack = self.get_ext_fullpath("sparse_numba.sparse_umfpack.cy_umfpack_wrapper")
+            ext_path_superlu = self.get_ext_fullpath("sparse_numba.sparse_superlu.cy_superlu_wrapper")
             # package_dir = os.path.dirname(ext_path)
-            package_dir = os.path.dirname(os.path.dirname(ext_path))  # package_dir is sparse_numba
+            package_dir = os.path.dirname(os.path.dirname(ext_path_umfpack))  # package_dir is sparse_numba
 
             # Print for debugging
-            print(f"Extension path: {ext_path}")
+            print(f"Extension umfpack path: {ext_path_umfpack}")
+            print(f"Extension superlu path: {ext_path_superlu}")
             print(f"Package directory: {package_dir}")
 
             # Create the vendor directories in the build
             suitesparse_target_dir = os.path.join(package_dir, "vendor", "suitesparse", "bin")
             openblas_target_dir = os.path.join(package_dir, "vendor", "openblas", "bin")
+            superlu_target_dir = os.path.join(package_dir, "vendor", "superlu", "bin")
             os.makedirs(suitesparse_target_dir, exist_ok=True)
+            os.makedirs(superlu_target_dir, exist_ok=True)
             os.makedirs(openblas_target_dir, exist_ok=True)
 
             # Source directories
             suitesparse_bin_dir = os.path.join("vendor", "suitesparse", "bin")
+            superlu_bin_dir = os.path.join("vendor", "superlu", "bin")
             openblas_bin_dir = os.path.join("vendor", "openblas", "bin")
 
             # Verify source directories exist
             print(f"SuiteSparse bin dir exists: {os.path.exists(suitesparse_bin_dir)}")
+            print(f"SuperLU bin dir exists: {os.path.exists(superlu_bin_dir)}")
             print(f"OpenBLAS bin dir exists: {os.path.exists(openblas_bin_dir)}")
 
             import shutil
@@ -122,11 +149,23 @@ class CustomBuildExt(build_ext):
                         )
                         print(f"Copied OpenBLAS DLL: {dll_file} to {dest_path}")
 
+            # Copy SuperLU DLLs
+            if os.path.exists(superlu_bin_dir):
+                for dll_file in os.listdir(superlu_bin_dir):
+                    if dll_file.endswith('.dll'):
+                        dest_path = os.path.join(superlu_target_dir, dll_file)
+                        shutil.copy(
+                            os.path.join(superlu_bin_dir, dll_file),
+                            dest_path
+                        )
+                        print(f"Copied SuperLU DLL: {dll_file} to {dest_path}")
+
 
 # Package data to include DLLs but not lib and include files
 package_data = {
     'sparse_numba': [
         # 'vendor/suitesparse/bin/*.dll',
+        'vendor/superlu/bin/*.dll',
         'vendor/openblas/bin/*.dll'
     ],
 }
@@ -170,7 +209,7 @@ package_data = {
 
 setup(
     name="sparse_numba",
-    version="0.1.5",
+    version="0.1.6",
     description="Customized sparse solver with Numba support",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",

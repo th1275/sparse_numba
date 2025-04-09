@@ -2,25 +2,18 @@
 Benchmark 2: Demonstrating the advantages of sparse_numba's Numba compatibility
 - Focus on solving multiple sparse systems with data exchange between iterations
 - Compare sequential SciPy approach vs. parallel sparse_numba with nogil
-
 """
-
-#  [sparse_numba] (C)2025-2025 Tianqi Hong
-#
-#  This program is free software; you can redistribute it and/or modify
-#  it under the terms of the BSD License.
-#
-#  File name: benchmark_parallel_umf.py
 
 import numpy as np
 import time
 import matplotlib.pyplot as plt
 from scipy import sparse
 from scipy.sparse.linalg import spsolve as scipy_spsolve
+import numba
 from numba import njit, prange
 
 # Import the sparse_numba solvers
-from sparse_numba import umfpack_solve_csc, umfpack_solve_coo, umfpack_solve_csr
+from sparse_numba import superlu_solve_csc
 
 
 def generate_multiple_sparse_problems(num_problems, n, density=0.1, seed=42):
@@ -163,7 +156,7 @@ def _parallel_sparse_numba_solver(A_data_arr, A_indices_arr, A_indptr_arr, b_arr
 
             # Call sparse_numba solver (must be callable from Numba)
             # Note: In practice, you would need to ensure umfpack_solve_csc is properly exposed to Numba
-            x_arr[i], _ = umfpack_solve_csc(A_data, A_indices, A_indptr, b)
+            x_arr[i], _ = superlu_solve_csc(A_data, A_indices, A_indptr, b)
 
         # Perform data exchange
         x_arr = numba_data_exchange(x_arr, exchange_indices)
@@ -245,7 +238,7 @@ def plot_parallel_benchmark_results(results):
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig('benchmark_parallel_solver.png', dpi=300)
+    plt.savefig('benchmark_parallel_solver_superlu.png', dpi=300)
     plt.show()
 
     # Calculate speedup
@@ -259,7 +252,7 @@ def plot_parallel_benchmark_results(results):
     plt.grid(True)
 
     plt.tight_layout()
-    plt.savefig('speedup_parallel_solver.png', dpi=300)
+    plt.savefig('speedup_parallel_solver_superlu.png', dpi=300)
     plt.show()
 
 
