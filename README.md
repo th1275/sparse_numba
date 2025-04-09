@@ -55,6 +55,7 @@ pip install dist/sparse_numba-%YOURVERSION%.whl
 
 **Note:** Despite installing MinGW-w64 (64-bit), the compiler setting is still `mingw32`. This is the correct name for the distutils compiler specification and does not affect the bitness of the compiled extension.
 
+Detailed installation information can be found [here](docs/Installation_Guide_for_sparse_numba.md).
 
 ## Usage
 
@@ -96,7 +97,7 @@ The test result on an Intel Ultra 7 258V processor.
 
 ![Single Problem Benchmark](benchmark_single_problem_superlu.png)
 
-### Multi-task Performance
+### Multi-Task Performance
 
 We compare the multi-task performance of Sparse_Numba with sequential SciPy.
 
@@ -111,7 +112,7 @@ We compare the multi-task performance of Sparse_Numba with sequential SciPy.
 ![Speedup Factor](speedup_parallel_solver_superlu.png)
 
 **Note:** The initialization time is included in these benchmarks. 
-This is why the Numba-compatible function is slower initially, 
+This is why the Numba-compatible function is initially slower, 
 but the performance advantage becomes evident as parallelization takes effect.
 
 ## Features and Limitations
@@ -126,7 +127,7 @@ but the performance advantage becomes evident as parallelization takes effect.
 - The UMFPACK DLL files are not redistributed in this tool
 - Other solvers are under development
 - Performance may be limited for extremely ill-conditioned matrices
-- **Only developed for Windows**, other platform will be supported soon
+- **Only developed/tested for Windows**, the support for other platforms (Linux and MacOS) are added without testing
 
 ## Roadmap
 
@@ -160,5 +161,8 @@ If you use Sparse_Numba in your research, you can consider to cite:
 ## Contributing to Sparse_Numba
 
 As an entry-level (or baby-level) developer, I still need more time to figure out the workflow. Due to my limited availability, this tool will also be updated very slowly. Please be patient. 
+
+
+
 
 Thank you!
