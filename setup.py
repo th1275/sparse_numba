@@ -3,25 +3,119 @@ import sys
 import platform
 from setuptools import setup, find_packages, Extension
 from setuptools.command.build_ext import build_ext
+from setuptools.command.bdist_wheel import bdist_wheel
 import numpy as np
 import distutils.ccompiler
 from distutils.errors import CompileError
 
+
+# Determine the platform
+PLATFORM = platform.system()
+IS_WINDOWS = PLATFORM == 'Windows'
+IS_LINUX = PLATFORM == 'Linux'
+IS_MACOS = PLATFORM == 'Darwin'
+
 # Force MinGW compiler on Windows
-if platform.system() == 'Windows':
+if IS_WINDOWS:
     # Save the original compiler selection function
     original_compiler = distutils.ccompiler.get_default_compiler
-
 
     # Override with a function that always returns 'mingw32'
     def force_mingw():
         return 'mingw32'
 
-
     # Replace the function
     distutils.ccompiler.get_default_compiler = force_mingw
 
-# Define the extension modules - only UMFPACK and SuperLU for now
+# Define platform-specific settings
+if IS_WINDOWS:
+    include_dirs = [
+        np.get_include(),
+        "sparse_numba/sparse_umfpack",
+        "sparse_numba/sparse_superlu",
+        "vendor/suitesparse/include",
+        "vendor/superlu/include",
+        "vendor/openblas/include"
+    ]
+    library_dirs = [
+        "vendor/suitesparse/lib",
+        "vendor/superlu/lib",
+        "vendor/openblas/lib"
+    ]
+    # Libraries needed for Windows
+    umfpack_libraries = [
+        "umfpack", "cholmod", "amd", "colamd", "camd", "ccolamd",
+        "suitesparseconfig", "openblas"
+    ]
+    superlu_libraries = ["superlu", "openblas"]
+    extra_compile_args = ["-O3"]
+    extra_link_args = []
+elif IS_LINUX:
+    # On Linux, we'll use system libraries if available
+    include_dirs = [
+        np.get_include(),
+        "sparse_numba/sparse_umfpack",
+        "sparse_numba/sparse_superlu",
+        "/usr/include/suitesparse",  # Standard location on most Linux distros
+        "/usr/local/include/suitesparse",  # Possible alternate location
+        "/usr/include/superlu",
+        "/usr/local/include/superlu"
+    ]
+    library_dirs = [
+        "/usr/lib",
+        "/usr/lib64",
+        "/usr/local/lib",
+        "/usr/local/lib64"
+    ]
+    # Libraries needed for Linux
+    umfpack_libraries = [
+        "umfpack", "cholmod", "amd", "colamd", "camd", "ccolamd",
+        "suitesparseconfig", "openblas", "blas"
+    ]
+    superlu_libraries = ["superlu", "openblas", "blas"]
+    extra_compile_args = ["-O3", "-fPIC"]
+    extra_link_args = []
+elif IS_MACOS:
+    # On macOS, we check both system locations and Homebrew/MacPorts locations
+    homebrew_prefix = os.popen("brew --prefix 2>/dev/null || echo ''").read().strip()
+    if not homebrew_prefix:
+        homebrew_prefix = "/usr/local"  # Default Homebrew location
+
+    include_dirs = [
+        np.get_include(),
+        "sparse_numba/sparse_umfpack",
+        "sparse_numba/sparse_superlu",
+        f"{homebrew_prefix}/include/suitesparse",
+        f"{homebrew_prefix}/include/superlu",
+        "/usr/local/include/suitesparse",
+        "/opt/local/include/suitesparse",  # MacPorts
+        "/usr/local/include/superlu",
+        "/opt/local/include/superlu"
+    ]
+    library_dirs = [
+        f"{homebrew_prefix}/lib",
+        "/usr/local/lib",
+        "/opt/local/lib"  # MacPorts
+    ]
+    # Libraries needed for macOS
+    umfpack_libraries = [
+        "umfpack", "cholmod", "amd", "colamd", "camd", "ccolamd",
+        "suitesparseconfig", "openblas"
+    ]
+    superlu_libraries = ["superlu", "openblas"]
+    # For macOS, ensure we're building for the right architecture
+    extra_compile_args = ["-O3", "-fPIC"]
+    # Handle Apple Silicon vs Intel Mac
+    if platform.machine() == 'arm64':
+        extra_compile_args.append("-arch arm64")
+        extra_link_args = ["-arch arm64"]
+    else:
+        extra_compile_args.append("-arch x86_64")
+        extra_link_args = ["-arch x86_64"]
+else:
+    raise RuntimeError(f"Unsupported platform: {PLATFORM}")
+
+# Define the extension modules
 extensions = [
     Extension(
         "sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
@@ -29,21 +123,12 @@ extensions = [
             "sparse_numba/sparse_umfpack/cy_umfpack_wrapper.pyx",
             "sparse_numba/sparse_umfpack/umfpack_wrapper.c"
         ],
-        include_dirs=[
-            np.get_include(),
-            "sparse_numba/sparse_umfpack",
-            "vendor/suitesparse/include",
-            "vendor/openblas/include"  # Fixed missing comma here
-        ],
-        libraries=[
-            "umfpack", "cholmod", "amd", "colamd", "camd", "ccolamd",
-            "suitesparseconfig", "openblas"
-        ],
-        library_dirs=[
-            "vendor/suitesparse/lib",
-            "vendor/openblas/lib"
-        ],
-        extra_compile_args=["-O3"],  # GCC optimization flag
+        include_dirs=include_dirs,
+        libraries=umfpack_libraries,
+        library_dirs=library_dirs,
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args,
+        py_limited_api=True,  # for multiple python version
     ),
     Extension(
         "sparse_numba.sparse_superlu.cy_superlu_wrapper",
@@ -51,20 +136,12 @@ extensions = [
             "sparse_numba/sparse_superlu/cy_superlu_wrapper.pyx",
             "sparse_numba/sparse_superlu/superlu_wrapper.c"
         ],
-        include_dirs=[
-            np.get_include(),
-            "sparse_numba/sparse_superlu",
-            "vendor/superlu/include",
-            "vendor/openblas/include"  # Fixed missing comma here
-        ],
-        libraries=[
-            "superlu", "openblas"
-        ],
-        library_dirs=[
-            "vendor/superlu/lib",
-            "vendor/openblas/lib"
-        ],
-        extra_compile_args=["-O3"],  # GCC optimization flag
+        include_dirs=include_dirs,
+        libraries=superlu_libraries,
+        library_dirs=library_dirs,
+        extra_compile_args=extra_compile_args,
+        extra_link_args=extra_link_args,
+        py_limited_api=True, # for multiple python version
     )
 ]
 
@@ -78,7 +155,7 @@ class CustomBuildExt(build_ext):
         self.include_dirs.append(np.get_include())
 
         # Force MinGW compiler on Windows
-        if platform.system() == 'Windows':
+        if IS_WINDOWS:
             self.compiler = 'mingw32'
 
     def build_extensions(self):
@@ -161,55 +238,40 @@ class CustomBuildExt(build_ext):
                         print(f"Copied SuperLU DLL: {dll_file} to {dest_path}")
 
 
-# Package data to include DLLs but not lib and include files
+# Define a custom wheel command
+class BDistWheelABI3(bdist_wheel):
+    def finalize_options(self):
+        super().finalize_options()
+        # Mark us as not tied to a specific Python API version
+        if not self.py_limited_api:
+            self.py_limited_api = "cp38"  # This sets minimum Python version to 3.8
+
+
+# Define platform-specific package data
 package_data = {
-    'sparse_numba': [
-        # 'vendor/suitesparse/bin/*.dll',
-        'vendor/superlu/bin/*.dll',
-        'vendor/openblas/bin/*.dll'
-    ],
+    'sparse_numba': []
 }
 
-# # Define data files
-# data_files = []
-# if platform.system() == 'Windows':
-#     # Source directories
-#     suitesparse_bin_dir = os.path.join("vendor", "suitesparse", "bin")
-#     openblas_bin_dir = os.path.join("vendor", "openblas", "bin")
-#
-#     # Check if directories exist and add DLLs (only include in sparse_numba package)
-#     if os.path.exists(suitesparse_bin_dir):
-#         data_files.append(
-#             ('sparse_numba/vendor/suitesparse/bin',
-#              [os.path.join(suitesparse_bin_dir, f) for f in os.listdir(suitesparse_bin_dir) if f.endswith('.dll')])
-#         )
-#
-#     if os.path.exists(openblas_bin_dir):
-#         data_files.append(
-#             ('sparse_numba/vendor/openblas/bin',
-#              [os.path.join(openblas_bin_dir, f) for f in os.listdir(openblas_bin_dir) if f.endswith('.dll')])
-#         )
+if IS_WINDOWS:
+    package_data['sparse_numba'] = [
+        'vendor/superlu/bin/*.dll',
+        'vendor/openblas/bin/*.dll'
+    ]
+elif IS_LINUX:
+    # No need to include system libraries on Linux
+    pass
+elif IS_MACOS:
+    # For macOS, we might include dylibs if we're bundling them
+    # package_data['sparse_numba'] = [
+    #     'vendor/superlu/lib/*.dylib',
+    #     'vendor/openblas/lib/*.dylib'
+    # ]
+    pass
 
-    # # Check if directories exist and add DLLs
-    # if os.path.exists(suitesparse_bin_dir):
-    #     data_files.extend([
-    #         ('sparse_numba/vendor/suitesparse/bin',
-    #          [os.path.join(suitesparse_bin_dir, f) for f in os.listdir(suitesparse_bin_dir) if f.endswith('.dll')]),
-    #         ('vendor/suitesparse/bin',
-    #          [os.path.join(suitesparse_bin_dir, f) for f in os.listdir(suitesparse_bin_dir) if f.endswith('.dll')])
-    #     ])
-    #
-    # if os.path.exists(openblas_bin_dir):
-    #     data_files.extend([
-    #         ('sparse_numba/vendor/openblas/bin',
-    #          [os.path.join(openblas_bin_dir, f) for f in os.listdir(openblas_bin_dir) if f.endswith('.dll')]),
-    #         ('vendor/openblas/bin',
-    #          [os.path.join(openblas_bin_dir, f) for f in os.listdir(openblas_bin_dir) if f.endswith('.dll')])
-    #     ])
 
 setup(
     name="sparse_numba",
-    version="0.1.6",
+    version="0.1.7",
     description="Customized sparse solver with Numba support",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -218,7 +280,10 @@ setup(
     url="https://github.com/th1275/sparse_numba",
     packages=find_packages(),
     ext_modules=extensions,
-    cmdclass={'build_ext': CustomBuildExt},
+    cmdclass={
+        'build_ext': CustomBuildExt,
+        'bdist_wheel': BDistWheelABI3
+    },
     package_data=package_data,
     # data_files=data_files,
     python_requires=">=3.8",
@@ -230,6 +295,8 @@ setup(
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: BSD License",
         "Operating System :: Microsoft :: Windows",
+        "Operating System :: POSIX :: Linux",
+        "Operating System :: MacOS :: MacOS X",
     ],
     # Include DLLs in multiple locations with include_package_data
     include_package_data=False,

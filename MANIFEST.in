@@ -1,14 +1,24 @@
 include sparse_numba/__init__.py
 include LICENSE
 include README.md
+include sparse_numba/*.py
 include sparse_numba/sparse_umfpack/*.py
 include sparse_numba/conversion/*.py
 include sparse_numba/sparse_superlu/*.py
 
-# Include only the DLLs needed at runtime
-
+# Windows-specific
 include vendor/openblas/bin/*.dll
 include vendor/superlu/bin/*.dll
+
+# Linux-specific
+include vendor/openblas/lib/*.so
+include vendor/openblas/lib/*.so.*
+include vendor/superlu/lib/*.so
+include vendor/superlu/lib/*.so.*
+
+# macOS-specific
+include vendor/openblas/lib/*.dylib
+include vendor/superlu/lib/*.dylib
 
 # Exclude source files from wheel package (keep them in sdist)
 exclude sparse_numba/sparse_umfpack/*.c
