@@ -4,10 +4,11 @@
 
 ## System Requirements
 
-### Windows
+### Windows (rebuild)
 - Python 3.8 or higher
 - MinGW-w64 with GCC (for compilation)
-- Required DLLs are bundled with the package
+- Required DLLs are bundled with the package (Except SuiteSparse)
+- Prebuilt wheel is available through pip install sparse_numba
 
 ### Linux
 - Python 3.8 or higher
@@ -115,3 +116,4 @@ If you get an error like `Library not loaded: libumfpack.dylib`:
 ## Support
 
 If you encounter any issues with the installation or use of sparse_numba, please open an issue on the GitHub repository: https://github.com/th1275/sparse_numba/issues
+However, I currently only have access to the Linux and MacOS systems.
