@@ -97,7 +97,7 @@ The test result on an Intel Ultra 7 258V processor.
 
 ![Single Problem Benchmark](benchmark_single_problem_superlu.png)
 
-### Multi-Task Performance
+### Multi-task Performance
 
 We compare the multi-task performance of Sparse_Numba with sequential SciPy.
 
@@ -152,7 +152,8 @@ DLLs of SuperLU can be obtained from build: https://github.com/xiaoyeli/superlu
 - libgomp-1.dll
 - libquadmath-0.dll
 - libwinpthread-1.dll
-These components are redistributed from the GNU toolchain
+- 
+These components are redistributed from the **GNU toolchain**.
 
 ## Citation
 
