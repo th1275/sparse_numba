@@ -10,7 +10,7 @@ A lightweight, Numba-compatible sparse linear solver designed for efficient para
 
 Python is widely used for rapid prototyping and demonstration, 
 despite its limitations in computationally intensive tasks. 
-Existing sparse linear solvers (e.g., SciPy and KVXOPT) are efficient 
+Existing sparse linear solvers (e.g., SciPy, CVXOPT, and KVXOPT) are efficient 
 for single-task scenarios but face performance bottlenecks 
 if there are frequent data exchanges and Python's Global Interpreter Lock (GIL).
 
