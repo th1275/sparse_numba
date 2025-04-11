@@ -152,7 +152,7 @@ DLLs of SuperLU can be obtained from build: https://github.com/xiaoyeli/superlu
 - libgomp-1.dll
 - libquadmath-0.dll
 - libwinpthread-1.dll
-- 
+
 These components are redistributed from the **GNU toolchain**.
 
 ## Citation
