@@ -141,8 +141,18 @@ offer more comprehensive implementations with parallel computing features.
 BSD 3-Clause License
 
 ### License Statement of OpenBLAS:
-DLL of OpenBLAS can be obtained from build: https://github.com/OpenMathLib/OpenBLAS
-DLL of SuperLU can be obtained from build: https://github.com/xiaoyeli/superlu
+DLLs of OpenBLAS can be obtained from build: https://github.com/OpenMathLib/OpenBLAS
+
+### License Statement of SuperLU:
+DLLs of SuperLU can be obtained from build: https://github.com/xiaoyeli/superlu
+
+### License Acknowledgment 
+- libgcc_s_seh-1.dll
+- libgfortran-5.dll
+- libgomp-1.dll
+- libquadmath-0.dll
+- libwinpthread-1.dll
+These components are redistributed from the GNU toolchain
 
 ## Citation
 
