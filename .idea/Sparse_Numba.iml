@@ -9,6 +9,9 @@
       <excludeFolder url="file://$MODULE_DIR$/vendor/openblas/lib" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/suitesparse/include" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/suitesparse/lib" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv08" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv09" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv11" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.10 (Sparse_Numba)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

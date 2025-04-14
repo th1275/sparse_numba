@@ -128,7 +128,7 @@ extensions = [
         library_dirs=library_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
-        py_limited_api=True,  # for multiple python version
+        # py_limited_api=True,  # for multiple python version
     ),
     Extension(
         "sparse_numba.sparse_superlu.cy_superlu_wrapper",
@@ -141,7 +141,7 @@ extensions = [
         library_dirs=library_dirs,
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
-        py_limited_api=True, # for multiple python version
+        # py_limited_api=True, # for multiple python version
     )
 ]
 
@@ -271,7 +271,7 @@ elif IS_MACOS:
 
 setup(
     name="sparse_numba",
-    version="0.1.8",
+    version="0.1.9",
     description="Customized sparse solver with Numba support",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
@@ -282,14 +282,14 @@ setup(
     ext_modules=extensions,
     cmdclass={
         'build_ext': CustomBuildExt,
-        'bdist_wheel': BDistWheelABI3
+        # 'bdist_wheel': BDistWheelABI3
     },
     package_data=package_data,
     # data_files=data_files,
     python_requires=">=3.8",
     install_requires=[
         "numpy>=1.13.3",
-        "numba>=0.60.0",
+        "numba>=0.58.0",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

@@ -23,5 +23,9 @@
 /sparse_numba.egg-info/
 /useful_commands.json
 
+__pycache__/
+*.py[cod]
+*$py.class
+
 
 

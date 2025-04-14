@@ -1,20 +1,33 @@
 """
-Benchmark 2: Demonstrating the advantages of sparse_numba's Numba compatibility
-- Focus on solving multiple sparse systems with data exchange between iterations
+Benchmark: Demonstrating the advantages of sparse_numba's Numba compatibility
+- Focus on solving multiple sparse systems in parallel vs sequential
 - Compare sequential SciPy approach vs. parallel sparse_numba with nogil
 """
+#  [sparse_numba] (C)2025-2025 Tianqi Hong
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the BSD License.
+#
+#  File name: benchmark_parallel_slu.py
 
 import numpy as np
 import time
 import matplotlib.pyplot as plt
 from scipy import sparse
 from scipy.sparse.linalg import spsolve as scipy_spsolve
-import numba
+from numba.typed import List
 from numba import njit, prange
+from numba.core import types
 
 # Import the sparse_numba solvers
 from sparse_numba import superlu_solve_csc
 
+
+# Configure Numba to use all available CPU cores
+# import multiprocessing
+# cpu_count = multiprocessing.cpu_count()
+# numba.set_num_threads(cpu_count)
+# print(f"Configured Numba to use {cpu_count} threads")
 
 def generate_multiple_sparse_problems(num_problems, n, density=0.1, seed=42):
     """Generate multiple sparse linear systems with varying coefficients."""
@@ -48,130 +61,48 @@ def generate_multiple_sparse_problems(num_problems, n, density=0.1, seed=42):
     return A_list, b_list, x_true_list
 
 
-def data_exchange(solutions, exchange_indices):
-    """Simulate data exchange between different systems."""
-    num_problems = len(solutions)
-    n = len(solutions[0])
-
-    # Create a copy of solutions
-    new_solutions = [np.copy(sol) for sol in solutions]
-
-    # Perform data exchange
-    for i in range(num_problems):
-        for idx in exchange_indices:
-            # Exchange with the next problem (circular)
-            next_problem = (i + 1) % num_problems
-            new_solutions[i][idx] = solutions[next_problem][idx]
-
-    return new_solutions
-
-
-@njit
-def numba_data_exchange(solutions, exchange_indices):
-    """Numba-optimized data exchange between different systems."""
-    num_problems = len(solutions)
-    n = len(solutions[0])
-
-    # Create a copy of solutions
-    new_solutions = np.empty((num_problems, n), dtype=np.float64)
-    for i in range(num_problems):
-        new_solutions[i] = solutions[i].copy()
-
-    # Perform data exchange
-    for i in range(num_problems):
-        for j in range(len(exchange_indices)):
-            idx = exchange_indices[j]
-            # Exchange with the next problem (circular)
-            next_problem = (i + 1) % num_problems
-            new_solutions[i, idx] = solutions[next_problem, idx]
-
-    return new_solutions
-
-
-def sequential_scipy_solver(A_list, b_list, exchange_indices, iterations):
-    """Solve multiple sparse systems sequentially with SciPy and perform data exchange."""
+def sequential_scipy_solver(A_list, b_list):
+    """Solve multiple sparse systems sequentially with SciPy."""
     num_problems = len(A_list)
     n = A_list[0].shape[0]
 
-    # Initial solutions
-    x_list = [np.zeros(n) for _ in range(num_problems)]
+    # Initialize solutions array
+    solutions = np.zeros((num_problems, n))
 
-    # Iterate
-    for iter_idx in range(iterations):
-        # Solve each system
-        for i in range(num_problems):
-            x_list[i] = scipy_spsolve(A_list[i], b_list[i])
+    # Solve each system sequentially
+    for i in range(num_problems):
+        solutions[i] = scipy_spsolve(A_list[i], b_list[i])
 
-        # Perform data exchange
-        x_list = data_exchange(x_list, exchange_indices)
-
-        # Update right-hand sides for next iteration
-        for i in range(num_problems):
-            b_list[i] = A_list[i] @ x_list[i]
-
-    return x_list
+    return solutions
 
 
-def parallel_sparse_numba_solver(A_data_list, A_indices_list, A_indptr_list, b_list, exchange_indices, iterations):
-    """
-    Solve multiple sparse systems in parallel with sparse_numba and Numba parallelization.
-    This function prepares the data for the Numba-optimized parallel solver.
-    """
+@njit(nogil=True, parallel=True)
+def parallel_sparse_numba_solver(A_data_list, A_indices_list, A_indptr_list, b_list, n):
+    """Solve multiple sparse systems in parallel with sparse_numba."""
     num_problems = len(A_data_list)
-    n = len(b_list[0])
 
-    # Convert lists to arrays for Numba
-    A_data_arr = np.array(A_data_list, dtype=object)
-    A_indices_arr = np.array(A_indices_list, dtype=object)
-    A_indptr_arr = np.array(A_indptr_list, dtype=object)
-    b_arr = np.array(b_list)
+    # Initialize solutions array
+    solutions = np.zeros((num_problems, n), dtype=np.float64)
 
-    # Convert exchange indices to array
-    exchange_indices_arr = np.array(exchange_indices, dtype=np.int64)
+    # Solve each system in parallel
+    for i in prange(num_problems):
+        # Extract the sparse matrix data for this problem
+        # data = A_data_list[i].astype(np.float64)
+        data = A_data_list[i]
+        indices = A_indices_list[i].astype(np.int32)
+        indptr = A_indptr_list[i].astype(np.int32)
+        b = b_list[i].astype(np.float64)
 
-    # Call the Numba-optimized function
-    return _parallel_sparse_numba_solver(
-        A_data_arr, A_indices_arr, A_indptr_arr, b_arr, exchange_indices_arr, iterations, num_problems, n
-    )
+        # Call sparse_numba solver - this is the key part that needs to be Numba-compatible
+        x, info = superlu_solve_csc(data, indices, indptr, b)
 
+        # Store the solution
+        solutions[i] = x
 
-@njit(parallel=True)
-def _parallel_sparse_numba_solver(A_data_arr, A_indices_arr, A_indptr_arr, b_arr, exchange_indices, iterations,
-                                  num_problems, n):
-    """
-    Numba-optimized function to solve multiple sparse systems in parallel.
-    """
-    # Initial solutions
-    x_arr = np.zeros((num_problems, n), dtype=np.float64)
-
-    # Iterate
-    for iter_idx in range(iterations):
-        # Solve each system in parallel
-        for i in prange(num_problems):
-            # Extract the sparse matrix data for this problem
-            A_data = A_data_arr[i]
-            A_indices = A_indices_arr[i]
-            A_indptr = A_indptr_arr[i]
-            b = b_arr[i]
-
-            # Call sparse_numba solver (must be callable from Numba)
-            # Note: In practice, you would need to ensure umfpack_solve_csc is properly exposed to Numba
-            x_arr[i], _ = superlu_solve_csc(A_data, A_indices, A_indptr, b)
-
-        # Perform data exchange
-        x_arr = numba_data_exchange(x_arr, exchange_indices)
-
-        # Update right-hand sides for next iteration (a simplified update)
-        # In practice, you would need to multiply A_csc by x within Numba
-        # This is just a placeholder - actual implementation would depend on how your sparse matrix-vector product is exposed to Numba
-        for i in range(num_problems):
-            # This part is simplified and would need your actual numba-compatible sparse matrix-vector multiplication
-            pass
-
-    return x_arr
+    return solutions
 
 
-def benchmark_iterative_solvers(num_problems_list, n, iterations=5, exchange_fraction=0.1):
+def benchmark_solvers(num_problems_list, n, repeat=3):
     """
     Benchmark both approaches (sequential SciPy vs. parallel sparse_numba) for different numbers of problems.
     """
@@ -187,35 +118,71 @@ def benchmark_iterative_solvers(num_problems_list, n, iterations=5, exchange_fra
         # Generate the test problems
         A_list, b_list, x_true_list = generate_multiple_sparse_problems(num_problems, n)
 
-        # Define exchange indices (random subset of indices)
-        num_exchanges = int(n * exchange_fraction)
-        exchange_indices = np.random.choice(n, num_exchanges, replace=False)
-
-        # Benchmark SciPy sequential approach
-        start = time.time()
-        x_scipy_list = sequential_scipy_solver(A_list, b_list.copy(), exchange_indices, iterations)
-        end = time.time()
-        scipy_time = end - start
-
         # Prepare data for sparse_numba
         A_data_list = [A.data for A in A_list]
         A_indices_list = [A.indices for A in A_list]
         A_indptr_list = [A.indptr for A in A_list]
 
-        # Benchmark sparse_numba parallel approach (with dummy implementation to simulate parallel)
-        # In reality, this would use your actual implementation that integrates with Numba
-        start = time.time()
-        # This is a simplified approach that simulates the benefit of parallelism
-        # For the actual implementation, you would need to have proper Numba compatibility
-        sequential_time_per_problem = scipy_time / num_problems
-        parallelism_benefit = min(num_problems, 4)  # Assuming a 4-core system
-        estimated_parallel_time = (
-                                              sequential_time_per_problem * num_problems / parallelism_benefit) * 0.9  # 10% additional speedup from Numba optimizations
+        # # Convert lists to arrays for Numba
+        # A_data_arr = np.array(A_data_list, dtype=np.float64)
+        # A_indices_arr = np.array(A_indices_list, dtype=np.int64)
+        # A_indptr_arr = np.array(A_indptr_list, dtype=np.int64)
+        # b_arr = np.array(b_list)
 
-        # Simulate computation for the estimated time
-        time.sleep(estimated_parallel_time)
-        end = time.time()
-        sparse_numba_time = end - start
+        # Create empty typed lists with type specification
+        A_data_arr = List.empty_list(types.float64[:])  # For 1D arrays of float64
+        A_indices_arr = List.empty_list(types.int64[:])  # For 1D arrays of int32
+        A_indptr_arr = List.empty_list(types.int64[:])  # For 1D arrays of int32
+        b_arr = List.empty_list(types.float64[:])  # For 1D arrays of float64
+
+        # Populate the typed lists, ensuring each element is converted to a numpy array
+        # with the desired dtype (optional if they are already numpy arrays).
+        for d in A_data_list:
+            A_data_arr.append(np.asarray(d, dtype=np.float64))
+
+        for idx in A_indices_list:
+            A_indices_arr.append(np.asarray(idx, dtype=np.int64))
+
+        for ptr in A_indptr_list:
+            A_indptr_arr.append(np.asarray(ptr, dtype=np.int64))
+
+        for bb in b_list:
+            b_arr.append(np.asarray(bb, dtype=np.float64))
+
+        # Run SciPy benchmark multiple times and take the best time
+        scipy_times = []
+        for r in range(repeat):
+            start = time.time()
+            x_scipy = sequential_scipy_solver(A_list, b_list)
+            end = time.time()
+            scipy_times.append(end - start)
+
+        scipy_time = min(scipy_times)  # Use the best time
+        print(f"  SciPy time: {scipy_time:.4f}s")
+
+        # Compile the Numba function with a small problem first (to avoid including compilation time)
+        if num_problems == num_problems_list[0]:
+            _ = parallel_sparse_numba_solver(
+                A_data_arr[:1], A_indices_arr[:1], A_indptr_arr[:1], b_arr[:1], n
+            )
+            print("  Numba function compiled")
+
+        # Run sparse_numba benchmark multiple times and take the best time
+        sparse_numba_times = []
+        for r in range(repeat):
+            start = time.time()
+            x_numba = parallel_sparse_numba_solver(
+                A_data_arr, A_indices_arr, A_indptr_arr, b_arr, n
+            )
+            end = time.time()
+            sparse_numba_times.append(end - start)
+
+        sparse_numba_time = min(sparse_numba_times)  # Use the best time
+        print(f"  sparse_numba time: {sparse_numba_time:.4f}s")
+
+        # Calculate speedup
+        speedup = scipy_time / sparse_numba_time
+        print(f"  Speedup: {speedup:.2f}x")
 
         # Store results
         results['scipy_time'].append(scipy_time)
@@ -224,8 +191,8 @@ def benchmark_iterative_solvers(num_problems_list, n, iterations=5, exchange_fra
     return results
 
 
-def plot_parallel_benchmark_results(results):
-    """Plot the results of the parallel benchmark."""
+def plot_benchmark_results(results):
+    """Plot the results of the benchmark."""
     plt.figure(figsize=(10, 6))
 
     plt.plot(results['num_problems'], results['scipy_time'], 'o-', label='SciPy (Sequential)')
@@ -233,12 +200,12 @@ def plot_parallel_benchmark_results(results):
 
     plt.xlabel('Number of Sparse Problems')
     plt.ylabel('Total Solution Time (s)')
-    plt.title('Performance Comparison for Multiple Sparse Systems with Data Exchange')
+    plt.title('Performance Comparison: SciPy vs sparse_numba')
     plt.grid(True)
     plt.legend()
 
     plt.tight_layout()
-    plt.savefig('benchmark_parallel_solver_superlu.png', dpi=300)
+    plt.savefig('benchmark_parallel_slu.png', dpi=300)
     plt.show()
 
     # Calculate speedup
@@ -251,24 +218,26 @@ def plot_parallel_benchmark_results(results):
     plt.title('Speedup of Parallel sparse_numba over Sequential SciPy')
     plt.grid(True)
 
+    # Add horizontal line at y=1 (no speedup)
+    plt.axhline(y=1, color='r', linestyle='--', alpha=0.5)
+
     plt.tight_layout()
-    plt.savefig('speedup_parallel_solver_superlu.png', dpi=300)
+    plt.savefig('speedup_parallel_slu.png', dpi=300)
     plt.show()
 
 
-def run_benchmark():
-    print("Benchmarking sparse_numba vs SciPy for multiple problems with data exchange...")
+if __name__ == "__main__":
+    print("Benchmarking sparse_numba vs SciPy for multiple problems...")
 
     # Parameters
     n = 1000  # Size of each problem
-    iterations = 5  # Number of iterations with data exchange
     num_problems_list = [1, 2, 4, 8, 16, 32]  # Different numbers of problems to solve
 
     # Run the benchmark
-    results = benchmark_iterative_solvers(num_problems_list, n, iterations)
+    results = benchmark_solvers(num_problems_list, n, repeat=3)
 
     # Plot the results
-    plot_parallel_benchmark_results(results)
+    plot_benchmark_results(results)
 
     # Print summary
     print("\nPerformance Summary:")

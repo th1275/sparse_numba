@@ -91,27 +91,27 @@ SciPy for solving single problems of different sizes.
 The test result on an Intel Ultra 7 258V processor.
 1. UMFPACK V.S. SciPy (spsolve):
 
-![Single Problem Benchmark](benchmark_single_problem_umfpack.png)
+![Single Problem Benchmark](benchmark_results/benchmark_single_problem_umfpack.png)
 
 2. SuperLU V.S. SciPy (spsolve):
 
-![Single Problem Benchmark](benchmark_single_problem_superlu.png)
+![Single Problem Benchmark](benchmark_results/benchmark_single_problem_superlu.png)
 
 ### Multi-Task Performance
 
 We compare the multi-task performance of Sparse_Numba with sequential SciPy.
 
-3. UMFPACK V.S. SciPy (spsolve):
+3. SuperLU V.S. SciPy (spsolve) with 258V:
 
-![Parallel Solver Benchmark](benchmark_parallel_solver_umfpack.png) 
-![Speedup Factor](speedup_parallel_solver_umfpack.png)
+![Parallel Solver Benchmark](benchmark_results/benchmark_parallel_slu_258V.png) 
+![Speedup Factor](benchmark_results/speedup_parallel_slu_258V.png)
 
-4. SuperLU V.S. Scipy (spsolve):
+4. SuperLU V.S. Scipy (spsolve) with Xeon W-2255:
 
-![Parallel Solver Benchmark](benchmark_parallel_solver_superlu.png) 
-![Speedup Factor](speedup_parallel_solver_superlu.png)
+![Parallel Solver Benchmark](benchmark_results/benchmark_parallel_slu_xeon.png) 
+![Speedup Factor](benchmark_results/speedup_parallel_slu_xeon.png)
 
-**Note:** The initialization time is included in these benchmarks. 
+**Note:** The initialization time is included in single problem benchmarks. 
 This is why the Numba-compatible function is initially slower, 
 but the performance advantage becomes evident as parallelization takes effect.
 
