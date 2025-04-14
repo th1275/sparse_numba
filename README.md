@@ -10,7 +10,7 @@ A lightweight, Numba-compatible sparse linear solver designed for efficient para
 
 Python is widely used for rapid prototyping and demonstration, 
 despite its limitations in computationally intensive tasks. 
-Existing sparse linear solvers (e.g., SciPy and KVXOPT) are efficient 
+Existing sparse linear solvers (e.g., SciPy, CVXOPT, and KVXOPT) are efficient 
 for single-task scenarios but face performance bottlenecks 
 if there are frequent data exchanges and Python's Global Interpreter Lock (GIL).
 
@@ -97,7 +97,7 @@ The test result on an Intel Ultra 7 258V processor.
 
 ![Single Problem Benchmark](benchmark_results/benchmark_single_problem_superlu.png)
 
-### Multi-Task Performance
+### Multi-task Performance
 
 We compare the multi-task performance of Sparse_Numba with sequential SciPy.
 
@@ -152,7 +152,8 @@ DLLs of SuperLU can be obtained from build: https://github.com/xiaoyeli/superlu
 - libgomp-1.dll
 - libquadmath-0.dll
 - libwinpthread-1.dll
-These components are redistributed from the GNU toolchain
+
+These components are redistributed from the **GNU toolchain**.
 
 ## Citation
 
