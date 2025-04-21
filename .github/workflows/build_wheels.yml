@@ -1,63 +1,160 @@
-name: Build Wheels
+name: Build and Test sparse_numba
 
 on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
-#  push:
-#    branches: [main]
-#  pull_request:
-#    branches: [main]
-#  release:
-#    types: [published]
 
 jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [windows-latest]
-        python: ['3.7', '3.8', '3.9', '3.10', '3.11']
+        os: [ubuntu-latest, macos-latest]  # Removed windows-latest
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python }}
-
-      # Add the MinGW setup here, after Python setup and before building
-      - name: Set up MinGW
-        uses: egor-tensin/setup-mingw@v2
-        with:
-          platform: x64
-
-      - name: Configure pip for MinGW
-        run: |
-          echo "[build]" > $HOME/.distutils.cfg
-          echo "compiler=mingw32" >> $HOME/.distutils.cfg
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install cibuildwheel==2.12.1
+          python -m pip install build wheel cython numpy setuptools twine
+          python -m pip install cibuildwheel
 
-      - name: Debug directory structure
+      # Linux specific setup
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
-          pwd
-          ls -la
-          echo "INCLUDE_DIRS path check:"
-          ls -la vendor/suitesparse/include || echo "Path not found"
-          ls -la sparse_numba/vendor/suitesparse/include || echo "Path not found"
+          sudo apt-get update
+          sudo apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev
 
+      # macOS specific setup
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install suite-sparse superlu openblas
+
+      # Build wheels
       - name: Build wheels
-        run: python -m cibuildwheel --output-dir wheelhouse
         env:
-          CIBW_BUILD: cp${{ matrix.python }}-win_amd64
-          CIBW_BEFORE_BUILD: pip install numpy cython numba
-#          CIBW_ENVIRONMENT: "INCLUDE_DIRS=sparse_numba/vendor/suitesparse/include;sparse_numba/vendor/openblas/include LIB_DIRS=sparse_numba/vendor/suitesparse/lib;sparse_numba/vendor/openblas/lib"
-          CIBW_ENVIRONMENT: "INCLUDE_DIRS=vendor/suitesparse/include;vendor/openblas/include LIB_DIRS=vendor/suitesparse/lib;vendor/openblas/lib"
+          CIBW_BUILD: 'cp38-* cp39-* cp310-* cp311-* cp312-*'
+          CIBW_SKIP: '*-musllinux* pp*'
+          CIBW_ARCHS_MACOS: 'x86_64 arm64'
+          CIBW_ARCHS_LINUX: 'x86_64'
+          CIBW_BEFORE_ALL_LINUX: >
+            yum install -y suitesparse-devel superlu-devel openblas-devel ||
+            apt-get update && apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev ||
+            dnf install -y suitesparse-devel superlu-devel openblas-devel
+          CIBW_BEFORE_ALL_MACOS: >
+            brew install suite-sparse superlu openblas || echo 'Dependencies might already be installed'
+          CIBW_ENVIRONMENT: "CFLAGS='-O3' CXXFLAGS='-O3'"
+          # Test script for each wheel built
+          CIBW_TEST_REQUIRES: "numpy scipy"
+          CIBW_TEST_COMMAND: "python {project}/run_tests.py"
+        run: |
+          python -m cibuildwheel --output-dir wheelhouse
 
-      - uses: actions/upload-artifact@v2
+      # Store the built wheels
+      - name: Upload wheels as artifacts
+        uses: actions/upload-artifact@v3
         with:
+          name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
           path: ./wheelhouse/*.whl
+
+  # Functional testing
+  test_functionality:
+    needs: build_wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download wheels
+        uses: actions/download-artifact@v3
+        with:
+          name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
+          path: ./wheelhouse
+
+      # Install necessary system libraries for testing
+      - name: Install Linux dependencies for testing
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev
+
+      - name: Install macOS dependencies for testing
+        if: runner.os == 'macOS'
+        run: |
+          brew install suite-sparse superlu openblas || echo 'Dependencies might already be installed'
+
+      # Install and test the wheel
+      - name: Install and test wheel
+        run: |
+          python -m pip install --find-links=./wheelhouse sparse_numba
+          python -m pip install numpy scipy
+          python run_tests.py
+
+  # Optional: Publish to PyPI when a tag is pushed
+  upload_pypi:
+    needs: [build_wheels, test_functionality]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install twine
+
+      - name: Download all wheels
+        uses: actions/download-artifact@v3
+        with:
+          path: ./wheelhouse
+
+      - name: Prepare distribution files
+        run: |
+          mkdir dist
+          cp wheelhouse/*/*.whl dist/
+
+      - name: Build source distribution
+        run: |
+          pip install build wheel
+          python -m build --sdist
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+        run: |
+          twine upload dist/*

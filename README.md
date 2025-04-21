@@ -30,7 +30,9 @@ Due to the license issue, this package cannot include DLLs from umfpack. To run 
 ```
 .venv/site-packages/sparse_numba/vendor/suitesparse/bin
 ```
-Support for SuperLU solver has been added in the current version (0.1.6). Other solvers might be added soon. Sorry for this inconvenience.
+- Support for SuperLU solver has been added in the version 0.1.6. 
+- github workflow is under testing in version 0.1.10.
+
 
 
 ### Installing from source (Windows)
