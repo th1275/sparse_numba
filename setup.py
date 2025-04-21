@@ -105,13 +105,19 @@ elif IS_MACOS:
     superlu_libraries = ["superlu", "openblas"]
     # For macOS, ensure we're building for the right architecture
     extra_compile_args = ["-O3", "-fPIC"]
-    # Handle Apple Silicon vs Intel Mac
-    if platform.machine() == 'arm64':
-        extra_compile_args.append("-arch arm64")
-        extra_link_args = ["-arch arm64"]
-    else:
-        extra_compile_args.append("-arch x86_64")
-        extra_link_args = ["-arch x86_64"]
+    extra_link_args = []
+
+    # Check if we're in a CI environment
+    ci_build = os.environ.get('CI', '') == 'true' or os.environ.get('GITHUB_ACTIONS', '') == 'true'
+
+    # Only add architecture flags if not in CI
+    if not ci_build:
+        if platform.machine() == 'arm64':
+            extra_compile_args.append("-arch arm64")
+            extra_link_args = ["-arch arm64"]
+        else:
+            extra_compile_args.append("-arch x86_64")
+            extra_link_args = ["-arch x86_64"]
 else:
     raise RuntimeError(f"Unsupported platform: {PLATFORM}")
 
