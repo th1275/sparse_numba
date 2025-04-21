@@ -1,3 +1,24 @@
+#[build-system]
+#requires = ["setuptools>=42", "wheel", "Cython>=0.29.21", "numpy>=1.13.3", "numba>=0.58.0"]
+#build-backend = "setuptools.build_meta"
+#
+#[tool.cibuildwheel]
+## Configuration for building wheels using cibuildwheel
+#skip = "pp* *-musllinux*"  # Skip PyPy and musllinux builds
+#
+## Linux build configuration
+#[tool.cibuildwheel.linux]
+#before-all = ["yum install -y suitesparse-devel superlu-devel openblas-devel || apt-get update && apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev || dnf install -y suitesparse-devel superlu-devel openblas-devel"]
+#
+## macOS build configuration
+#[tool.cibuildwheel.macos]
+#before-all = ["brew install suite-sparse superlu openblas || echo 'Dependencies might already be installed'"]
+#
+## Environment variables for all platforms
+#[tool.cibuildwheel.environment]
+#CFLAGS = "-O3"
+#CXXFLAGS = "-O3"
+
 [build-system]
 requires = ["setuptools>=42", "wheel", "Cython>=0.29.21", "numpy>=1.13.3", "numba>=0.58.0"]
 build-backend = "setuptools.build_meta"
@@ -8,11 +29,20 @@ skip = "pp* *-musllinux*"  # Skip PyPy and musllinux builds
 
 # Linux build configuration
 [tool.cibuildwheel.linux]
-before-all = ["yum install -y suitesparse-devel superlu-devel openblas-devel || apt-get update && apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev || dnf install -y suitesparse-devel superlu-devel openblas-devel"]
+before-all = [
+    "yum install -y epel-release || echo 'epel-release installation attempt'",
+    "yum install -y suitesparse-devel superlu-devel openblas-devel || apt-get update && apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev || dnf install -y suitesparse-devel superlu-devel openblas-devel",
+    "find /usr -name slu_ddefs.h | head -n 1"  # Debug: locate the SuperLU header
+]
 
 # macOS build configuration
 [tool.cibuildwheel.macos]
-before-all = ["brew install suite-sparse superlu openblas || echo 'Dependencies might already be installed'"]
+before-all = [
+    "brew install suite-sparse superlu openblas || echo 'Dependencies might already be installed'",
+    "brew --prefix openblas",  # Debug: show OpenBLAS location
+    "mkdir -p /usr/local/opt/openblas/lib",
+    "ln -sf $(brew --prefix openblas)/lib/libopenblas.dylib /usr/local/opt/openblas/lib/"
+]
 
 # Environment variables for all platforms
 [tool.cibuildwheel.environment]

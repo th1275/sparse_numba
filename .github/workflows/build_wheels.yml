@@ -37,6 +37,33 @@ jobs:
           python -m pip install build wheel cython numpy setuptools twine
           python -m pip install cibuildwheel
 
+      # Linux specific setup
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsuitesparse-dev libopenblas-dev
+          # Install SuperLU manually and set correct include path
+          sudo apt-get install -y libsuperlu-dev
+          # Check the SuperLU header location
+          echo "SuperLU include paths:"
+          find /usr -name "slu_ddefs.h" | grep superlu
+
+      # macOS specific setup
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install suite-sparse superlu openblas
+          # Debug: Check the openblas library location
+          brew --prefix openblas
+          echo "OpenBLAS library paths:"
+          find $(brew --prefix openblas) -name "*.dylib"
+          # Add the openblas bin directory to PATH
+          echo "$(brew --prefix openblas)/lib" >> $GITHUB_PATH
+          # Create symbolic links to make sure the library is found
+          mkdir -p /usr/local/opt/openblas/lib
+          ln -sf $(brew --prefix openblas)/lib/libopenblas.dylib /usr/local/opt/openblas/lib/
+
       # Patch setup.py for CI environment - Fixed indentation issues
       - name: Patch setup.py for CI environment
         run: |
@@ -104,34 +131,39 @@ jobs:
                   "/usr/include/suitesparse",  # Standard location on most Linux distros
                   "/usr/local/include/suitesparse",  # Possible alternate location
                   "/usr/include/superlu",
-                  "/usr/local/include/superlu"
+                  "/usr/local/include/superlu",
+                  # Add additional SuperLU include paths for different distros
+                  "/usr/include",
+                  "/usr/include/superlu-dist", 
+                  "/usr/include/x86_64-linux-gnu/superlu"
               ]
+              
+              # Detect SuperLU include path dynamically - try to find slu_ddefs.h
+              import subprocess
+              try:
+                  superlu_path = subprocess.check_output("find /usr -name slu_ddefs.h | head -n 1", shell=True).decode().strip()
+                  if superlu_path:
+                      superlu_dir = os.path.dirname(superlu_path)
+                      print(f"Found SuperLU headers at: {superlu_dir}")
+                      include_dirs.append(superlu_dir)
+              except:
+                  print("Could not detect SuperLU header location automatically")
+                  
               library_dirs = [
                   "/usr/lib",
                   "/usr/lib64",
                   "/usr/local/lib",
-                  "/usr/local/lib64"
+                  "/usr/local/lib64",
+                  "/usr/lib/x86_64-linux-gnu"
               ]
+              
               # Libraries needed for Linux
+              # For CI builds, remove blas from the library list as it's causing issues
               umfpack_libraries = [
                   "umfpack", "cholmod", "amd", "colamd", "camd", "ccolamd",
                   "suitesparseconfig", "openblas"
               ]
               superlu_libraries = ["superlu", "openblas"]
-              
-              # For CI builds, remove blas from the library list as it's causing issues
-              if CI_BUILD:
-                  umfpack_libraries = [
-                      "umfpack", "cholmod", "amd", "colamd", "camd", "ccolamd",
-                      "suitesparseconfig", "openblas"
-                  ]
-                  superlu_libraries = ["superlu", "openblas"]
-              else:
-                  umfpack_libraries = [
-                      "umfpack", "cholmod", "amd", "colamd", "camd", "ccolamd",
-                      "suitesparseconfig", "openblas", "blas"
-                  ]
-                  superlu_libraries = ["superlu", "openblas", "blas"]
                   
               extra_compile_args = ["-O3", "-fPIC"]
               extra_link_args = []
@@ -140,41 +172,64 @@ jobs:
               homebrew_prefix = os.popen("brew --prefix 2>/dev/null || echo ''").read().strip()
               if not homebrew_prefix:
                   homebrew_prefix = "/usr/local"  # Default Homebrew location
+                  
+              # Find Homebrew OpenBLAS location
+              openblas_prefix = os.popen("brew --prefix openblas 2>/dev/null || echo ''").read().strip()
+              if not openblas_prefix:
+                  openblas_prefix = "/usr/local/opt/openblas"  # Default location
+                  
+              # Find Homebrew SuperLU location  
+              superlu_prefix = os.popen("brew --prefix superlu 2>/dev/null || echo ''").read().strip()
+              if not superlu_prefix:
+                  superlu_prefix = "/usr/local/opt/superlu"  # Default location
+                  
+              # Find Homebrew SuiteSparse location
+              suitesparse_prefix = os.popen("brew --prefix suite-sparse 2>/dev/null || echo ''").read().strip()
+              if not suitesparse_prefix:
+                  suitesparse_prefix = "/usr/local/opt/suite-sparse"  # Default location
 
               include_dirs = [
                   np.get_include(),
                   "sparse_numba/sparse_umfpack",
                   "sparse_numba/sparse_superlu",
-                  f"{homebrew_prefix}/include/suitesparse",
-                  f"{homebrew_prefix}/include/superlu",
+                  f"{suitesparse_prefix}/include/suitesparse",
+                  f"{superlu_prefix}/include/superlu",
                   "/usr/local/include/suitesparse",
                   "/opt/local/include/suitesparse",  # MacPorts
                   "/usr/local/include/superlu",
-                  "/opt/local/include/superlu"
+                  "/opt/local/include/superlu",
+                  f"{openblas_prefix}/include"
               ]
+              
               library_dirs = [
                   f"{homebrew_prefix}/lib",
+                  f"{openblas_prefix}/lib",
+                  f"{superlu_prefix}/lib",
+                  f"{suitesparse_prefix}/lib",
                   "/usr/local/lib",
+                  "/usr/local/opt/openblas/lib",
                   "/opt/local/lib"  # MacPorts
               ]
+              
               # Libraries needed for macOS
               umfpack_libraries = [
                   "umfpack", "cholmod", "amd", "colamd", "camd", "ccolamd",
                   "suitesparseconfig", "openblas"
               ]
               superlu_libraries = ["superlu", "openblas"]
+              
               # For macOS, ensure we're building for the right architecture
               extra_compile_args = ["-O3", "-fPIC"]
-              extra_link_args = []
+              extra_link_args = [f"-L{openblas_prefix}/lib", "-lopenblas"]
               
               # Skip architecture flags in CI environments
               if not CI_BUILD:
                   if platform.machine() == 'arm64':
                       extra_compile_args.append("-arch arm64")
-                      extra_link_args = ["-arch arm64"]
+                      extra_link_args.append("-arch arm64")
                   else:
                       extra_compile_args.append("-arch x86_64")
-                      extra_link_args = ["-arch x86_64"]
+                      extra_link_args.append("-arch x86_64")
           else:
               raise RuntimeError(f"Unsupported platform: {PLATFORM}")
 
@@ -219,7 +274,17 @@ jobs:
                       self.compiler = 'mingw32'
 
               def build_extensions(self):
-                  # Ensure MinGW is being used
+                  # Print debugging info for include paths and libraries
+                  print("\n--- Build Configuration ---")
+                  print(f"Include directories: {self.include_dirs}")
+                  print(f"Library directories: {library_dirs}")
+                  print(f"UMFPACK libraries: {umfpack_libraries}")
+                  print(f"SuperLU libraries: {superlu_libraries}")
+                  print(f"Extra compile args: {extra_compile_args}")
+                  print(f"Extra link args: {extra_link_args}")
+                  print("-------------------------\n")
+                  
+                  # Ensure MinGW is being used on Windows
                   if platform.system() == 'Windows':
                       if self.compiler.compiler_type != 'mingw32':
                           raise CompileError(
@@ -341,19 +406,6 @@ jobs:
           # Make sure the file is executable
           chmod +x setup.py
 
-      # Linux specific setup
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev
-
-      # macOS specific setup
-      - name: Install macOS dependencies
-        if: runner.os == 'macOS'
-        run: |
-          brew install suite-sparse superlu openblas
-
       # Build wheels
       - name: Build wheels
         env:
@@ -371,11 +423,19 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
           CIBW_BEFORE_ALL_LINUX: >
             yum install -y epel-release &&
-            yum install -y openblas-devel &&
+            yum install -y openblas-devel superlu-devel &&
             yum install -y suitesparse-devel ||
-            echo "Some packages may not be available, continuing anyway"
+            (yum install -y epel-release &&
+            yum install -y openblas-devel &&
+            yum install -y suitesparse-devel &&
+            yum install -y superlu-devel ||
+            echo "Installing dependencies via apt-get" &&
+            apt-get update &&
+            apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev)
           CIBW_BEFORE_ALL_MACOS: >
-            brew install suite-sparse superlu openblas
+            brew install suite-sparse superlu openblas &&
+            mkdir -p /usr/local/opt/openblas/lib &&
+            ln -sf $(brew --prefix openblas)/lib/libopenblas.dylib /usr/local/opt/openblas/lib/
           # Skip tests for now to get the wheels built
           CIBW_TEST_SKIP: '*'
         run: |
