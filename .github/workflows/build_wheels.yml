@@ -42,12 +42,21 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsuitesparse-dev libopenblas-dev
-          # Install SuperLU manually and set correct include path
-          sudo apt-get install -y libsuperlu-dev
-          # Check the SuperLU header location
-          echo "SuperLU include paths:"
-          find /usr -name "slu_ddefs.h" | grep superlu
+          sudo apt-get install -y libsuitesparse-dev libopenblas-dev libsuperlu-dev
+          # Check where SuperLU headers are located
+          echo "SuperLU header locations:"
+          sudo find /usr -name "slu_ddefs.h" | grep superlu
+          # Create symlinks if necessary
+          SUPERLU_HEADER=$(sudo find /usr -name "slu_ddefs.h" | grep superlu | head -n 1)
+          if [ -n "$SUPERLU_HEADER" ]; then
+            SUPERLU_DIR=$(dirname "$SUPERLU_HEADER")
+            echo "Found SuperLU headers at: $SUPERLU_DIR"
+            if [ ! -d "/usr/include/superlu" ]; then
+              sudo mkdir -p /usr/include/superlu
+              sudo cp "$SUPERLU_DIR"/*.h /usr/include/superlu/
+              echo "Created SuperLU header symlinks in /usr/include/superlu/"
+            fi
+          fi
 
       # macOS specific setup
       - name: Install macOS dependencies
@@ -55,18 +64,21 @@ jobs:
         run: |
           brew install suite-sparse superlu openblas
           # Debug: Check the openblas library location
-          brew --prefix openblas
+          export OPENBLAS_PREFIX=$(brew --prefix openblas)
+          echo "OpenBLAS prefix: $OPENBLAS_PREFIX"
           echo "OpenBLAS library paths:"
-          find $(brew --prefix openblas) -name "*.dylib"
-          # Add the openblas bin directory to PATH
-          echo "$(brew --prefix openblas)/lib" >> $GITHUB_PATH
-          # Create symbolic links to make sure the library is found
-          mkdir -p /usr/local/opt/openblas/lib
-          ln -sf $(brew --prefix openblas)/lib/libopenblas.dylib /usr/local/opt/openblas/lib/
+          find $OPENBLAS_PREFIX -name "*.dylib"
+          # Use the home directory for temporary symlinks (avoid permission issues)
+          mkdir -p $HOME/homebrew_libs/openblas/lib
+          ln -sf $OPENBLAS_PREFIX/lib/libopenblas.dylib $HOME/homebrew_libs/openblas/lib/
+          echo "Created symlink in $HOME/homebrew_libs/openblas/lib/"
+          echo "OPENBLAS_PREFIX=$OPENBLAS_PREFIX" >> $GITHUB_ENV
+          echo "HOME_LIBS=$HOME/homebrew_libs" >> $GITHUB_ENV
 
-      # Patch setup.py for CI environment - Fixed indentation issues
+      # Patch setup.py for CI environment
       - name: Patch setup.py for CI environment
         run: |
+          # Create a new setup.py file with our improved version
           cat > setup.py.new << 'EOF'
           import os
           import sys
@@ -77,6 +89,7 @@ jobs:
           import numpy as np
           import distutils.ccompiler
           from distutils.errors import CompileError
+
 
           # CI environment detection
           CI_BUILD = os.environ.get('CI', '') == 'true' or os.environ.get('GITHUB_ACTIONS', '') == 'true'
@@ -124,31 +137,51 @@ jobs:
               extra_link_args = []
           elif IS_LINUX:
               # On Linux, we'll use system libraries if available
+              # Try to locate SuperLU headers dynamically
+              superlu_include_dirs = [
+                  "/usr/include/superlu",
+                  "/usr/local/include/superlu",
+                  "/usr/include/suitesparse/superlu", 
+                  "/usr/include/SuperLU",
+                  "/tmp/superlu_include",  # Our custom location from the GitHub workflow
+                  "/usr/include/x86_64-linux-gnu/superlu",  # Debian/Ubuntu specific location
+              ]
+              
+              # Check if each directory exists
+              valid_superlu_dirs = []
+              for dir_path in superlu_include_dirs:
+                  if os.path.exists(dir_path):
+                      valid_superlu_dirs.append(dir_path)
+                      print(f"Found valid SuperLU include dir: {dir_path}")
+              
+              # Base include directories
               include_dirs = [
                   np.get_include(),
                   "sparse_numba/sparse_umfpack",
                   "sparse_numba/sparse_superlu",
                   "/usr/include/suitesparse",  # Standard location on most Linux distros
                   "/usr/local/include/suitesparse",  # Possible alternate location
-                  "/usr/include/superlu",
-                  "/usr/local/include/superlu",
-                  # Add additional SuperLU include paths for different distros
-                  "/usr/include",
-                  "/usr/include/superlu-dist", 
-                  "/usr/include/x86_64-linux-gnu/superlu"
               ]
               
-              # Detect SuperLU include path dynamically - try to find slu_ddefs.h
-              import subprocess
-              try:
-                  superlu_path = subprocess.check_output("find /usr -name slu_ddefs.h | head -n 1", shell=True).decode().strip()
-                  if superlu_path:
-                      superlu_dir = os.path.dirname(superlu_path)
-                      print(f"Found SuperLU headers at: {superlu_dir}")
-                      include_dirs.append(superlu_dir)
-              except:
-                  print("Could not detect SuperLU header location automatically")
-                  
+              # Add valid SuperLU directories
+              include_dirs.extend(valid_superlu_dirs)
+              
+              # If no valid SuperLU directories found, try to find headers manually
+              if not valid_superlu_dirs:
+                  import subprocess
+                  try:
+                      # Find SuperLU headers
+                      find_cmd = "find /usr -name slu_ddefs.h 2>/dev/null || echo ''"
+                      print(f"Running command: {find_cmd}")
+                      superlu_path = subprocess.check_output(find_cmd, shell=True).decode().strip()
+                      if superlu_path:
+                          superlu_dir = os.path.dirname(superlu_path)
+                          print(f"Found SuperLU headers at: {superlu_dir}")
+                          include_dirs.append(superlu_dir)
+                  except Exception as e:
+                      print(f"Error finding SuperLU headers: {e}")
+              
+              # Define library directories
               library_dirs = [
                   "/usr/lib",
                   "/usr/lib64",
@@ -158,25 +191,28 @@ jobs:
               ]
               
               # Libraries needed for Linux
-              # For CI builds, remove blas from the library list as it's causing issues
               umfpack_libraries = [
                   "umfpack", "cholmod", "amd", "colamd", "camd", "ccolamd",
                   "suitesparseconfig", "openblas"
               ]
               superlu_libraries = ["superlu", "openblas"]
-                  
+              
               extra_compile_args = ["-O3", "-fPIC"]
               extra_link_args = []
           elif IS_MACOS:
-              # On macOS, we check both system locations and Homebrew/MacPorts locations
+              # On macOS, check both system locations and Homebrew/MacPorts locations
               homebrew_prefix = os.popen("brew --prefix 2>/dev/null || echo ''").read().strip()
               if not homebrew_prefix:
                   homebrew_prefix = "/usr/local"  # Default Homebrew location
                   
               # Find Homebrew OpenBLAS location
-              openblas_prefix = os.popen("brew --prefix openblas 2>/dev/null || echo ''").read().strip()
+              openblas_prefix = os.environ.get('OPENBLAS_PREFIX')
+              if not openblas_prefix:
+                  openblas_prefix = os.popen("brew --prefix openblas 2>/dev/null || echo ''").read().strip()
               if not openblas_prefix:
                   openblas_prefix = "/usr/local/opt/openblas"  # Default location
+              
+              print(f"Using OpenBLAS prefix: {openblas_prefix}")
                   
               # Find Homebrew SuperLU location  
               superlu_prefix = os.popen("brew --prefix superlu 2>/dev/null || echo ''").read().strip()
@@ -187,6 +223,14 @@ jobs:
               suitesparse_prefix = os.popen("brew --prefix suite-sparse 2>/dev/null || echo ''").read().strip()
               if not suitesparse_prefix:
                   suitesparse_prefix = "/usr/local/opt/suite-sparse"  # Default location
+              
+              # Check for home directory symlinks (from GitHub workflow)
+              home_libs = os.environ.get('HOME_LIBS')
+              home_openblas_lib = None
+              if home_libs:
+                  home_openblas_lib = os.path.join(home_libs, "openblas", "lib")
+                  if os.path.exists(home_openblas_lib):
+                      print(f"Found home directory OpenBLAS lib: {home_openblas_lib}")
 
               include_dirs = [
                   np.get_include(),
@@ -194,6 +238,7 @@ jobs:
                   "sparse_numba/sparse_superlu",
                   f"{suitesparse_prefix}/include/suitesparse",
                   f"{superlu_prefix}/include/superlu",
+                  f"{superlu_prefix}/include",  # Newer Homebrew might put headers here
                   "/usr/local/include/suitesparse",
                   "/opt/local/include/suitesparse",  # MacPorts
                   "/usr/local/include/superlu",
@@ -211,6 +256,10 @@ jobs:
                   "/opt/local/lib"  # MacPorts
               ]
               
+              # Add home directory symlinks if available
+              if home_openblas_lib:
+                  library_dirs.insert(0, home_openblas_lib)  # Add with high priority
+              
               # Libraries needed for macOS
               umfpack_libraries = [
                   "umfpack", "cholmod", "amd", "colamd", "camd", "ccolamd",
@@ -222,6 +271,9 @@ jobs:
               extra_compile_args = ["-O3", "-fPIC"]
               extra_link_args = [f"-L{openblas_prefix}/lib", "-lopenblas"]
               
+              if home_openblas_lib:
+                  extra_link_args.insert(0, f"-L{home_openblas_lib}")  # Add with high priority
+              
               # Skip architecture flags in CI environments
               if not CI_BUILD:
                   if platform.machine() == 'arm64':
@@ -232,6 +284,18 @@ jobs:
                       extra_link_args.append("-arch x86_64")
           else:
               raise RuntimeError(f"Unsupported platform: {PLATFORM}")
+
+          # Print configuration for debugging
+          print("\n=== Build Configuration ===")
+          print(f"Platform: {PLATFORM}")
+          print(f"Include directories: {include_dirs}")
+          print(f"Library directories: {library_dirs}")
+          print(f"UMFPACK libraries: {umfpack_libraries}")
+          print(f"SuperLU libraries: {superlu_libraries}")
+          print(f"Extra compile args: {extra_compile_args}")
+          print(f"Extra link args: {extra_link_args}")
+          print(f"CI Build: {CI_BUILD}")
+          print("===========================\n")
 
           # Define the extension modules
           extensions = [
@@ -275,14 +339,28 @@ jobs:
 
               def build_extensions(self):
                   # Print debugging info for include paths and libraries
-                  print("\n--- Build Configuration ---")
-                  print(f"Include directories: {self.include_dirs}")
-                  print(f"Library directories: {library_dirs}")
+                  print("\n--- Build Extension Configuration ---")
+                  print(f"self.include_dirs: {self.include_dirs}")
+                  print(f"library_dirs: {library_dirs}")
                   print(f"UMFPACK libraries: {umfpack_libraries}")
                   print(f"SuperLU libraries: {superlu_libraries}")
                   print(f"Extra compile args: {extra_compile_args}")
                   print(f"Extra link args: {extra_link_args}")
-                  print("-------------------------\n")
+                  
+                  # List all SuperLU headers in include paths
+                  for include_dir in self.include_dirs:
+                      if os.path.exists(include_dir):
+                          slu_headers = []
+                          try:
+                              for f in os.listdir(include_dir):
+                                  if f.startswith('slu_') and f.endswith('.h'):
+                                      slu_headers.append(f)
+                              if slu_headers:
+                                  print(f"SuperLU headers in {include_dir}: {', '.join(slu_headers)}")
+                          except Exception as e:
+                              print(f"Error checking {include_dir}: {e}")
+                              
+                  print("--------------------------------\n")
                   
                   # Ensure MinGW is being used on Windows
                   if platform.system() == 'Windows':
@@ -405,87 +483,3 @@ jobs:
           
           # Make sure the file is executable
           chmod +x setup.py
-
-      # Build wheels
-      - name: Build wheels
-        env:
-          CIBW_BUILD: 'cp38-* cp39-* cp310-* cp311-* cp312-*'
-          CIBW_SKIP: '*-musllinux* pp*'
-          CIBW_ARCHS_MACOS: 'x86_64'  # Just x86_64 for CI builds
-          CIBW_ARCHS_LINUX: 'x86_64'
-          # Set CI flag for setup.py
-          CIBW_ENVIRONMENT: >
-            CI=true
-            GITHUB_ACTIONS=true
-            CFLAGS='-O3'
-            CXXFLAGS='-O3'
-          # manylinux configuration - install required packages
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-          CIBW_BEFORE_ALL_LINUX: >
-            yum install -y epel-release &&
-            yum install -y openblas-devel superlu-devel &&
-            yum install -y suitesparse-devel ||
-            (yum install -y epel-release &&
-            yum install -y openblas-devel &&
-            yum install -y suitesparse-devel &&
-            yum install -y superlu-devel ||
-            echo "Installing dependencies via apt-get" &&
-            apt-get update &&
-            apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev)
-          CIBW_BEFORE_ALL_MACOS: >
-            brew install suite-sparse superlu openblas &&
-            mkdir -p /usr/local/opt/openblas/lib &&
-            ln -sf $(brew --prefix openblas)/lib/libopenblas.dylib /usr/local/opt/openblas/lib/
-          # Skip tests for now to get the wheels built
-          CIBW_TEST_SKIP: '*'
-        run: |
-          python -m cibuildwheel --output-dir wheelhouse
-
-      # Store the built wheels
-      - name: Upload wheels as artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
-          path: ./wheelhouse/*.whl
-
-  # Publish to PyPI when a tag is pushed
-  upload_pypi:
-    needs: [build_wheels]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install twine
-
-      - name: Download all wheels
-        uses: actions/download-artifact@v4
-        with:
-          pattern: wheels-*
-          path: ./wheelhouse
-          merge-multiple: true
-
-      - name: Prepare distribution files
-        run: |
-          mkdir -p dist
-          cp wheelhouse/*.whl dist/
-
-      - name: Build source distribution
-        run: |
-          pip install build wheel
-          python -m build --sdist
-
-      - name: Publish to PyPI
-        env:
-          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
-        run: |
-          twine upload dist/*
