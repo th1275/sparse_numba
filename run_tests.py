@@ -24,7 +24,7 @@ def main():
         b = np.ones(n, dtype=np.float64)
 
         # Solve using SuperLU
-        x = sparse_numba.superlu_solve_csc(n, n, data, indices, indptr, b)
+        x = sparse_numba.sparse_superlu.superlu_numba_interface.superlu_solve_csc(n, n, data, indices, indptr, b)
 
         # Check result
         if not np.allclose(x, b):

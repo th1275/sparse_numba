@@ -1083,7 +1083,7 @@ elif IS_MACOS:
 # Setup configuration
 setup(
     name="sparse_numba",
-    version="0.1.9",
+    version="0.1.10",
     description="Customized sparse solver with Numba support",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",

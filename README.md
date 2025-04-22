@@ -63,7 +63,8 @@ Detailed installation information can be found [here](docs/Installation_Guide_fo
 
 ```python
 import numpy as np
-from sparse_numba import umfpack_solve_csc, superlu_solve_csc
+from sparse_numba.sparse_superlu.superlu_numba_interface import superlu_solve_csc
+from sparse_numba.sparse_umfpack.umfpack_numba_interface import umfpack_solve_csc
 
 # Example with CSC format (Compressed Sparse Column)
 # Create a sparse matrix in CSC format
