@@ -31,6 +31,7 @@ functype = ctypes.CFUNCTYPE(
 )
 c_solve_sparse_system = functype(addr)
 
+__all__ = ['superlu_solve_csc', 'superlu_solve_coo', 'superlu_solve_csr']
 
 @njit(nogil=True)
 def superlu_solve_csc(csc_data, csc_indices, csc_indptr, b):

@@ -22,7 +22,7 @@ from numba import njit, prange
 from numba.core import types
 
 # Import the sparse_numba solvers
-from sparse_numba.sparse_umfpack.umfpack_numba_interface import umfpack_solve_csc
+from sparse_numba.umfpack_numba_interface import umfpack_solve_csc
 
 
 # Configure Numba to use all available CPU cores

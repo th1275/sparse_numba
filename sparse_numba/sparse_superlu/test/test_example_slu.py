@@ -13,7 +13,7 @@ This demonstrates how to use the solver with different sparse matrix formats.
 
 import numpy as np
 import random
-from sparse_numba.sparse_superlu.superlu_numba_interface import (
+from sparse_numba.superlu_numba_interface import (
     superlu_solve_csc,
     superlu_solve_csr,
     superlu_solve_coo

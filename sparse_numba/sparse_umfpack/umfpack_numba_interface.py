@@ -33,6 +33,8 @@ functype = ctypes.CFUNCTYPE(
 )
 c_solve_sparse_system = functype(addr)
 
+__all__ = ['umfpack_solve_csc', 'umfpack_solve_coo', 'umfpack_solve_csr']
+
 
 @njit(nogil=True)
 def umfpack_solve_csc(csc_data, csc_indices, csc_indptr, b):

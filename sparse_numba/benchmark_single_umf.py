@@ -18,7 +18,7 @@ from scipy import sparse
 from scipy.sparse.linalg import spsolve as scipy_spsolve
 
 # Import the sparse_numba solvers
-from sparse_numba.sparse_umfpack.umfpack_numba_interface import umfpack_solve_csc, umfpack_solve_coo, umfpack_solve_csr
+from sparse_numba.umfpack_numba_interface import umfpack_solve_csc, umfpack_solve_coo, umfpack_solve_csr
 
 def generate_sparse_problem(n, density=0.1, condition=1e3, seed=42):
     """Generate a sparse linear system Ax = b with known solution."""
