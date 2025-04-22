@@ -93,8 +93,8 @@ def umfpack_solve_csc(csc_data, csc_indices, csc_indptr, b):
     return result, info
 
 # Import conversion functions
-# from sparse_numba_umfpack.umfpack_numba_conversion import convert_coo_to_csc, convert_csr_to_csc
-from . import convert_coo_to_csc, convert_csr_to_csc
+from sparse_numba.conversion.matrix_conversion_numba import convert_coo_to_csc, convert_csr_to_csc
+# from . import convert_coo_to_csc, convert_csr_to_csc
 
 @njit(nogil=True)
 def umfpack_solve_coo(row_indices, col_indices, data, shape, b):

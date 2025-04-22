@@ -262,18 +262,18 @@ __all__ = [
 ]
 
 # Try importing benchmark modules, but don't fail if not available
-try:
-    from . import benchmark_single_slu
-    from . import benchmark_parallel_slu
-    from . import benchmark_single_umf
-    from . import benchmark_parallel_umf
-    __all__.extend([
-        'benchmark_single_slu',
-        'benchmark_single_umf',
-        'benchmark_parallel_slu',
-        'benchmark_parallel_umf',
-    ])
-except ImportError:
-    logger.debug("Benchmark modules not available")
+# try:
+#     from . import benchmark_single_slu
+#     from . import benchmark_parallel_slu
+#     from . import benchmark_single_umf
+#     from . import benchmark_parallel_umf
+#     __all__.extend([
+#         'benchmark_single_slu',
+#         'benchmark_single_umf',
+#         'benchmark_parallel_slu',
+#         'benchmark_parallel_umf',
+#     ])
+# except ImportError:
+#     logger.debug("Benchmark modules not available")
 
 __author__ = "Tianqi Hong"

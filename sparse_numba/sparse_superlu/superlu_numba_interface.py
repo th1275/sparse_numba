@@ -110,8 +110,8 @@ def superlu_solve_csc(csc_data, csc_indices, csc_indptr, b):
 
 
 # Import conversion functions
-from . import convert_coo_to_csc, convert_csr_to_csc
-
+# from . import convert_coo_to_csc, convert_csr_to_csc
+from sparse_numba.conversion.matrix_conversion_numba import convert_coo_to_csc, convert_csr_to_csc
 
 @njit(nogil=True)
 def superlu_solve_coo(row_indices, col_indices, data, shape, b):
