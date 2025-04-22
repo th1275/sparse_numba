@@ -576,20 +576,25 @@ jobs:
             CXXFLAGS='-O3'
           # manylinux configuration - install required packages
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
-          CIBW_BEFORE_ALL_LINUX: >
-            yum install -y epel-release || true;
-            yum install -y openblas-devel SuperLU-devel suitesparse-devel || 
-            yum install -y openblas-devel superlu-devel suitesparse-devel || 
-            (apt-get update && apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev);
+          CIBW_BEFORE_ALL_LINUX: |
+            yum install -y epel-release || true
+            yum install -y openblas-devel SuperLU-devel suitesparse-devel ||
+            yum install -y openblas-devel superlu-devel suitesparse-devel ||
+            (apt-get update && apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev)
+            
             # Check SuperLU header location
-            find /usr -name "slu_ddefs.h" || echo "SuperLU headers not found";
+            find /usr -name "slu_ddefs.h" || echo "SuperLU headers not found"
+            
             # If header is found, create a symlink in a standard location
-            HEADER_PATH=$(find /usr -name "slu_ddefs.h" | head -1);
+            HEADER_PATH=$(find /usr -name "slu_ddefs.h" | head -1)
             if [ -n "$HEADER_PATH" ]; then
-              HEADER_DIR=$(dirname "$HEADER_PATH");
-              mkdir -p /tmp/superlu_include;
-              cp $HEADER_DIR/*.h /tmp/superlu_include/;
-              echo "Copied SuperLU headers to /tmp/superlu_include/";
+              HEADER_DIR=$(dirname "$HEADER_PATH")
+              mkdir -p /tmp/superlu_include
+              # Use a conditional copy to avoid errors when no headers match
+              if [ -f "$HEADER_DIR/slu_ddefs.h" ]; then
+                cp "$HEADER_DIR"/*.h /tmp/superlu_include/ 2>/dev/null || true
+                echo "Copied SuperLU headers to /tmp/superlu_include/"
+              fi
             fi
           CIBW_BEFORE_ALL_MACOS: >
             brew install suite-sparse superlu openblas;
