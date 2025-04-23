@@ -1007,7 +1007,24 @@ class CustomBuildExt(build_ext):
         build_ext.build_extensions(self)
 
     def run(self):
+        print("\n" + "=" * 80)
+        print("BUILDING EXTENSIONS")
+        print(f"Extensions to build: {[ext.name for ext in self.extensions]}")
+        print(f"Build directory: {self.build_lib}")
+        print(f"Include directories: {self.include_dirs}")
+        print("=" * 80 + "\n")
         build_ext.run(self)
+
+        print("\n" + "=" * 80)
+        print("EXTENSION BUILD COMPLETED")
+        print("Checking for built extensions:")
+        for ext in self.extensions:
+            ext_path = self.get_ext_fullpath(ext.name)
+            if os.path.exists(ext_path):
+                print(f"✅ {ext.name} successfully built at {ext_path}")
+            else:
+                print(f"❌ {ext.name} FAILED TO BUILD (expected at {ext_path})")
+        print("=" * 80 + "\n")
 
         # After building, copy DLLs to the package directory
         if platform.system() == 'Windows':

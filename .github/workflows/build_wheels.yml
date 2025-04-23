@@ -82,6 +82,11 @@ jobs:
 #          CIBW_BUILD: 'cp38-* cp39-* cp310-* cp311-* cp312-*'
           CIBW_BUILD: 'cp310-*'
           CIBW_SKIP: '*-musllinux* pp*'
+          # Add this to ensure extensions are built
+          CIBW_BEFORE_BUILD: >
+            pip install numpy cython
+          # Make compilation more verbose to see errors
+          CIBW_BUILD_VERBOSITY: 3
           CIBW_ARCHS_MACOS: 'x86_64'  # Just x86_64 for CI builds
           CIBW_ARCHS_LINUX: 'x86_64'
           # Set CI flag for setup.py
@@ -233,6 +238,14 @@ jobs:
           fi
           echo "Installing wheel: $WHEEL_FILE"
           python -m pip install $WHEEL_FILE
+
+      - name: Run extension diagnostics
+        run: |
+          python dll_diagnosis.py
+
+      - name: Verify extensions
+        run: |
+          python -c "import importlib.util; import sys; ext1 = importlib.util.find_spec('sparse_numba.sparse_superlu.cy_superlu_wrapper'); ext2 = importlib.util.find_spec('sparse_numba.sparse_umfpack.cy_umfpack_wrapper'); print(f'SuperLU ext: {ext1 is not None}'); print(f'UMFPACK ext: {ext2 is not None}'); sys.exit(0 if ext1 and ext2 else 1)"
 
       - name: Run tests
         run: |

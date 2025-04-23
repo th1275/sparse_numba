@@ -93,42 +93,83 @@ def check_libraries():
         logger.error(f"Unsupported platform: {platform_name}")
         return libraries
 
-    # First try ctypes.util.find_library
+    # First try direct file paths for faster results and more reliability
     for lib, variants in lib_names.items():
         for variant in variants:
-            lib_path = ctypes.util.find_library(variant.split('.')[0])  # Remove extension
-            if lib_path:
-                logger.info(f"Found {lib} library: {lib_path}")
-                try:
-                    if platform_name == 'Windows':
-                        # On Windows, just load by name
-                        lib_handle = ctypes.CDLL(variant)
-                    else:
-                        # On Unix, load with RTLD_GLOBAL to ensure symbols are available to extensions
-                        lib_handle = ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
-                    logger.info(f"Successfully loaded {lib} library")
-                    libraries[lib] = True
-                    break
-                except Exception as e:
-                    logger.warning(f"Found but could not load {lib}: {e}")
-
-        # If not found through find_library, try direct file paths
-        if not libraries[lib]:
-            for variant in variants:
-                for lib_dir in lib_dirs:
-                    if os.path.exists(lib_dir):
-                        full_path = os.path.join(lib_dir, variant)
-                        if os.path.exists(full_path):
-                            logger.info(f"Found {lib} library file: {full_path}")
-                            try:
+            for lib_dir in lib_dirs:
+                if os.path.exists(lib_dir):
+                    full_path = os.path.join(lib_dir, variant)
+                    if os.path.exists(full_path):
+                        logger.info(f"Found {lib} library file: {full_path}")
+                        try:
+                            if platform_name == 'Windows':
+                                lib_handle = ctypes.CDLL(full_path)
+                            else:
                                 lib_handle = ctypes.CDLL(full_path, mode=ctypes.RTLD_GLOBAL)
-                                logger.info(f"Successfully loaded {lib} library from {full_path}")
+                            logger.info(f"Successfully loaded {lib} library from {full_path}")
+                            libraries[lib] = True
+                            break
+                        except Exception as e:
+                            logger.warning(f"Found but could not load {lib} from {full_path}: {e}")
+            if libraries[lib]:
+                break
+
+    # If direct path didn't work, try ctypes.util.find_library as a fallback
+    # This is more error-prone, so we do it second
+    if not all(libraries.values()):
+        for lib, variants in lib_names.items():
+            if not libraries[lib]:  # Skip if already found
+                for variant in variants:
+                    try:
+                        lib_name = variant.split('.')[0]  # Remove extension
+                        # Skip "lib" prefix for find_library on Linux/macOS
+                        if lib_name.startswith("lib") and platform_name in ['Linux', 'Darwin']:
+                            lib_name = lib_name[3:]
+
+                        lib_path = ctypes.util.find_library(lib_name)
+                        if lib_path:
+                            logger.info(f"Found {lib} library via find_library: {lib_path}")
+                            try:
+                                if platform_name == 'Windows':
+                                    lib_handle = ctypes.CDLL(lib_path)
+                                else:
+                                    lib_handle = ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
+                                logger.info(f"Successfully loaded {lib} library from {lib_path}")
                                 libraries[lib] = True
                                 break
                             except Exception as e:
-                                logger.warning(f"Found but could not load {lib} from {full_path}: {e}")
-                if libraries[lib]:
-                    break
+                                logger.warning(f"Found but could not load {lib} from {lib_path}: {e}")
+                    except Exception as e:
+                        logger.warning(f"Error searching for {lib} using ctypes.util.find_library: {e}")
+
+    # If using apt-based Linux, try ldconfig -p as a last resort
+    if platform_name == 'Linux' and not all(libraries.values()):
+        try:
+            import subprocess
+            result = subprocess.run(['ldconfig', '-p'], capture_output=True, text=True)
+            if result.returncode == 0:
+                output = result.stdout
+                for lib in libraries.keys():
+                    if not libraries[lib]:  # Skip if already found
+                        search_terms = [f"lib{lib}", lib]
+                        for term in search_terms:
+                            lines = [line for line in output.split('\n') if term in line.lower()]
+                            for line in lines:
+                                parts = line.split('=>')
+                                if len(parts) > 1:
+                                    lib_path = parts[1].strip()
+                                    logger.info(f"Found {lib} library via ldconfig: {lib_path}")
+                                    try:
+                                        lib_handle = ctypes.CDLL(lib_path, mode=ctypes.RTLD_GLOBAL)
+                                        logger.info(f"Successfully loaded {lib} library from {lib_path}")
+                                        libraries[lib] = True
+                                        break
+                                    except Exception as e:
+                                        logger.warning(f"Found but could not load {lib} from {lib_path}: {e}")
+                            if libraries[lib]:
+                                break
+        except (subprocess.SubprocessError, FileNotFoundError) as e:
+            logger.warning(f"Could not run ldconfig: {e}")
 
     # Summary of library availability
     for lib, available in libraries.items():
