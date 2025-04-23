@@ -16,29 +16,25 @@ def main():
 
     # Check if SuperLU is available before testing
     try:
-        # First check if the module is available
-        if hasattr(sparse_numba, 'has_superlu') and sparse_numba.has_superlu():
-            # Create a simple sparse matrix (diagonal matrix)
-            n = 5
-            data = np.ones(n, dtype=np.float64)
-            indices = np.arange(n, dtype=np.int32)
-            indptr = np.arange(n + 1, dtype=np.int32)
-            b = np.ones(n, dtype=np.float64)
+        # Create a simple sparse matrix (diagonal matrix)
+        n = 5
+        data = np.ones(n, dtype=np.float64)
+        indices = np.arange(n, dtype=np.int32)
+        indptr = np.arange(n + 1, dtype=np.int32)
+        b = np.ones(n, dtype=np.float64)
 
-            # Get the solver function (avoid direct access pattern that might cause import recursion)
-            solver = sparse_numba.superlu_numba_interface.superlu_solve_csc
+        # Get the solver function (avoid direct access pattern that might cause import recursion)
+        solver = sparse_numba.sparse_superlu.superlu_numba_interface.superlu_solve_csc
 
-            # Solve using SuperLU
-            x = solver(n, n, data, indices, indptr, b)
+        # Solve using SuperLU
+        x, _ = solver(data, indices, indptr, b)
 
-            # Check result
-            if not np.allclose(x, b):
-                print(f"SuperLU solution is incorrect: {x} != {b}")
-                sys.exit(1)
+        # Check result
+        if not np.allclose(x, b):
+            print(f"SuperLU solution is incorrect: {x} != {b}")
+            sys.exit(1)
 
-            print("SuperLU solver test passed!")
-        else:
-            print("SuperLU not available, skipping test")
+        print("SuperLU solver test passed!")
     except Exception as e:
         print(f"SuperLU solver test failed: {e}")
         import traceback
@@ -49,13 +45,9 @@ def main():
     if os.name != 'nt':
         try:
             # Check if UMFPACK is available
-            if hasattr(sparse_numba, 'has_umfpack') and sparse_numba.has_umfpack():
-                # Try UMFPACK if available
-                solver = sparse_numba.umfpack_numba_interface.umfpack_solve_csc
-                x = solver(n, n, data, indices, indptr, b)
-                print("UMFPACK solver test passed!")
-            else:
-                print("UMFPACK not available, skipping test")
+            solver = sparse_numba.sparse_umfpack.umfpack_numba_interface.umfpack_solve_csc
+            x, _ = solver(data, indices, indptr, b)
+            print("UMFPACK solver test passed!")
         except Exception as e:
             print(f"UMFPACK solver test (optional): {e}")
             # Don't fail the build if UMFPACK isn't available

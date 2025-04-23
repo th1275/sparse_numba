@@ -13,7 +13,7 @@ This demonstrates how to use the solver with different sparse matrix formats.
 import numpy as np
 import random
 import scipy.sparse as sp
-from sparse_numba.umfpack_numba_interface import (
+from sparse_numba.sparse_umfpack.umfpack_numba_interface import (
     umfpack_solve_csc,
     umfpack_solve_csr,
     umfpack_solve_coo

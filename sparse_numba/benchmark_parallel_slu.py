@@ -20,7 +20,7 @@ from numba import njit, prange
 from numba.core import types
 
 # Import the sparse_numba solvers
-from sparse_numba.superlu_numba_interface import superlu_solve_csc
+from sparse_numba.sparse_superlu.superlu_numba_interface import superlu_solve_csc
 
 
 # Configure Numba to use all available CPU cores

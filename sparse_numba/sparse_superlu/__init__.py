@@ -8,6 +8,7 @@ import platform
 import logging
 import ctypes
 import ctypes.util
+import importlib
 
 # Get logger
 logger = logging.getLogger("sparse_numba")
@@ -130,8 +131,10 @@ initialize_superlu()
 def __getattr__(name):
     if name == 'superlu_numba_interface':
         if _HAS_SUPERLU:
-            from . import superlu_numba_interface
-            return superlu_numba_interface
+            # from . import superlu_numba_interface
+            # return superlu_numba_interface
+            module = importlib.import_module('.superlu_numba_interface', package='sparse_numba.sparse_superlu')
+            return module
         else:
             raise ImportError("SuperLU libraries are not available")
     raise AttributeError(f"module 'sparse_numba.sparse_superlu' has no attribute '{name}'")

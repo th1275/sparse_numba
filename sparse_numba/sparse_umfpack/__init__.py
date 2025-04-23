@@ -8,6 +8,7 @@ import platform
 import logging
 import ctypes
 import ctypes.util
+import importlib
 
 # Get logger
 logger = logging.getLogger("sparse_numba")
@@ -131,8 +132,10 @@ initialize_umfpack()
 def __getattr__(name):
     if name == 'umfpack_numba_interface':
         if _HAS_UMFPACK:
-            from . import umfpack_numba_interface
-            return umfpack_numba_interface
+            # from . import umfpack_numba_interface
+            # return umfpack_numba_interface
+            module = importlib.import_module('.umfpack_numba_interface', package='sparse_numba.sparse_umfpack')
+            return module
         else:
             raise ImportError("UMFPACK libraries are not available")
     raise AttributeError(f"module 'sparse_numba.sparse_umfpack' has no attribute '{name}'")
