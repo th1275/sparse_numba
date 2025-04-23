@@ -140,7 +140,7 @@ def __getattr__(name):
     raise AttributeError(f"module 'sparse_numba.sparse_superlu' has no attribute '{name}'")
 
 
-__all__ = ['superlu_numba_interface', 'is_available']
+__all__ = ['superlu_numba_interface', 'cy_superlu_wrapper', 'is_available']
 
 
 def is_available():

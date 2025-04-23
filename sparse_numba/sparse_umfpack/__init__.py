@@ -141,7 +141,7 @@ def __getattr__(name):
     raise AttributeError(f"module 'sparse_numba.sparse_umfpack' has no attribute '{name}'")
 
 
-__all__ = ['umfpack_numba_interface', 'is_available']
+__all__ = ['umfpack_numba_interface', 'cy_umfpack_wrapper', 'is_available']
 
 
 def is_available():
