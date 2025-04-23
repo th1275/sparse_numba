@@ -141,7 +141,7 @@ jobs:
             cd {project} && 
             python -c "import os, sys; from importlib.util import find_spec; 
             ext_path = find_spec('sparse_numba.sparse_superlu.cy_superlu_wrapper'); 
-            print(f'Extension module found: {ext_path is not None}'); 
+            print(f'Extension module found: {ext_path} is not None'); 
             if ext_path is not None: print(f'Location: {ext_path.origin}');" &&
             python run_tests.py || 
             echo "Tests failed but continuing to build other wheels"
