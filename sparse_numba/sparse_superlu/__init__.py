@@ -137,6 +137,12 @@ def __getattr__(name):
             return module
         else:
             raise ImportError("SuperLU libraries are not available")
+    elif name == 'cy_superlu_wrapper':
+        if _HAS_SUPERLU:
+            module = importlib.import_module('.cy_superlu_wrapper', package='sparse_numba.sparse_superlu')
+            return module
+        else:
+            raise ImportError("cy_superlu_wrapper libraries are not available")
     raise AttributeError(f"module 'sparse_numba.sparse_superlu' has no attribute '{name}'")
 
 

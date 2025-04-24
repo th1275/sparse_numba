@@ -138,7 +138,14 @@ def __getattr__(name):
             return module
         else:
             raise ImportError("UMFPACK libraries are not available")
-    raise AttributeError(f"module 'sparse_numba.sparse_umfpack' has no attribute '{name}'")
+    elif name == 'cy_umfpack_wrapper':
+        if _HAS_UMFPACK:
+            module = importlib.import_module('.cy_umfpack_wrapper', package='sparse_numba.sparse_umfpack')
+            return module
+        else:
+            raise ImportError("cy_umfpack_wrapper libraries are not available")
+    else:
+        raise AttributeError(f"module 'sparse_numba.sparse_umfpack' has no attribute '{name}'")
 
 
 __all__ = ['umfpack_numba_interface', 'cy_umfpack_wrapper', 'is_available']
