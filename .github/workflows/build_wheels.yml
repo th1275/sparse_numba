@@ -80,13 +80,13 @@ jobs:
       - name: Build wheels
         env:
 #          CIBW_BUILD: 'cp38-* cp39-* cp310-* cp311-* cp312-*'
-          CIBW_BUILD: 'cp310-*'
+          CIBW_BUILD: 'cp311-*'
           CIBW_SKIP: '*-musllinux* pp*'
           # Add this to ensure extensions are built
           CIBW_BEFORE_BUILD: >
             pip install numpy cython
           # Make compilation more verbose to see errors
-          CIBW_BUILD_VERBOSITY: 3
+          CIBW_BUILD_VERBOSITY: 2
           CIBW_ARCHS_MACOS: 'x86_64'  # Just x86_64 for CI builds
           CIBW_ARCHS_LINUX: 'x86_64'
           # Set CI flag for setup.py
@@ -139,7 +139,7 @@ jobs:
             numba
           CIBW_TEST_COMMAND: >
             cd {project} && 
-            python -c "import os, sys; from importlib.util import find_spec; ext_path = find_spec('sparse_numba.sparse_superlu.cy_superlu_wrapper'); print(f'Extension module found: {ext_path} is not None'); if ext_path is not None: print(f'Location: {ext_path.origin}');" &&
+            python -c "import os, sys; from importlib.util import find_spec; ext_path = find_spec('sparse_numba.sparse_superlu.cy_superlu_wrapper'); print(f\"Extension module found: {ext_path is not None}\"); if ext_path is not None: print(f\"Location: {ext_path.origin}\");"
             python run_tests.py || 
             echo "Tests failed but continuing to build other wheels"
         run: |
