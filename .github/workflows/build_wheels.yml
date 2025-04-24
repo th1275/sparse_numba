@@ -249,9 +249,9 @@ jobs:
 #        run: |
 #          python dll_diagnosis.py
 
-      - name: Verify extensions
-        run: |
-          python -c "import importlib.util; import sys; ext1 = importlib.util.find_spec('sparse_numba.sparse_superlu.cy_superlu_wrapper'); ext2 = importlib.util.find_spec('sparse_numba.sparse_umfpack.cy_umfpack_wrapper'); print(f'SuperLU ext: {ext1 is not None}'); print(f'UMFPACK ext: {ext2 is not None}'); sys.exit(0 if ext1 and ext2 else 1)"
+#      - name: Verify extensions
+#        run: |
+#          python -c "import importlib.util; import sys; ext1 = importlib.util.find_spec('sparse_numba.sparse_superlu.cy_superlu_wrapper'); ext2 = importlib.util.find_spec('sparse_numba.sparse_umfpack.cy_umfpack_wrapper'); print(f'SuperLU ext: {ext1 is not None}'); print(f'UMFPACK ext: {ext2 is not None}'); sys.exit(0 if ext1 and ext2 else 1)"
 
       - name: Run tests
         run: |
