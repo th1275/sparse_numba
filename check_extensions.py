@@ -33,7 +33,7 @@ try:
     superlu_dir = os.path.join(package_dir, "sparse_superlu")
     umfpack_dir = os.path.join(package_dir, "sparse_umfpack")
 
-    print("\nSearching for extension modules:")
+    print(f"\nSearching for extension modules in {superlu_dir} and {umfpack_dir}:")
     extensions_found = False
 
     for directory in [superlu_dir, umfpack_dir]:

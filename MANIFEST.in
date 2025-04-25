@@ -20,6 +20,13 @@ include vendor/superlu/lib/*.so.*
 include vendor/openblas/lib/*.dylib
 include vendor/superlu/lib/*.dylib
 
+include sparse_numba/sparse_umfpack/*.pyd
+include sparse_numba/sparse_umfpack/*.so
+include sparse_numba/sparse_umfpack/*.dylib
+include sparse_numba/sparse_superlu/*.pyd
+include sparse_numba/sparse_superlu/*.so
+include sparse_numba/sparse_superlu/*.dylib
+
 # Exclude source files from wheel package (keep them in sdist)
 exclude sparse_numba/sparse_umfpack/*.c
 exclude sparse_numba/sparse_umfpack/*.h
