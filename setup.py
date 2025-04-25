@@ -372,54 +372,36 @@ class CustomBuildExt(build_ext):
                         )
                         print(f"Copied SuperLU DLL: {dll_file} to {dest_path}")
 
-        # Handle Linux and macOS - ensure extension modules are in their proper locations
+        # Handle Linux and macOS - ensure extension modules have the right permissions
         elif platform.system() in ('Linux', 'Darwin'):
-            import shutil
-
-            # Define the target directories
-            target_superlu_dir = os.path.join(package_dir, "sparse_superlu")
-            target_umfpack_dir = os.path.join(package_dir, "sparse_umfpack")
-
-            # Ensure target directories exist
-            os.makedirs(target_superlu_dir, exist_ok=True)
-            os.makedirs(target_umfpack_dir, exist_ok=True)
-
-            # Check if extensions were built
-            if os.path.exists(ext_path_superlu):
-                # Get just the filename from the path
-                ext_superlu_filename = os.path.basename(ext_path_superlu)
-                target_path = os.path.join(target_superlu_dir, ext_superlu_filename)
-
-                # Copy the extension file to the target directory
-                print(f"Copying SuperLU extension from {ext_path_superlu} to {target_path}")
-                shutil.copy(ext_path_superlu, target_path)
-
-                # Set executable permissions
+            # The extensions are already in the right place, we just need to ensure they have
+            # the right permissions
+            try:
                 import stat
-                os.chmod(target_path, os.stat(target_path).st_mode | stat.S_IEXEC)
-                print(f"Set executable permissions on {target_path}")
-            else:
-                print(f"WARNING: SuperLU extension not found at {ext_path_superlu}")
 
-            if os.path.exists(ext_path_umfpack):
-                # Get just the filename from the path
-                ext_umfpack_filename = os.path.basename(ext_path_umfpack)
-                target_path = os.path.join(target_umfpack_dir, ext_umfpack_filename)
+                # Set executable permissions for SuperLU extension
+                if os.path.exists(ext_path_superlu):
+                    print(f"Setting executable permissions on SuperLU extension: {ext_path_superlu}")
+                    os.chmod(ext_path_superlu, os.stat(ext_path_superlu).st_mode | stat.S_IEXEC)
+                else:
+                    print(f"WARNING: SuperLU extension not found at {ext_path_superlu}")
 
-                # Copy the extension file to the target directory
-                print(f"Copying UMFPACK extension from {ext_path_umfpack} to {target_path}")
-                shutil.copy(ext_path_umfpack, target_path)
+                # Set executable permissions for UMFPACK extension
+                if os.path.exists(ext_path_umfpack):
+                    print(f"Setting executable permissions on UMFPACK extension: {ext_path_umfpack}")
+                    os.chmod(ext_path_umfpack, os.stat(ext_path_umfpack).st_mode | stat.S_IEXEC)
+                else:
+                    print(f"WARNING: UMFPACK extension not found at {ext_path_umfpack}")
 
-                # Set executable permissions
-                import stat
-                os.chmod(target_path, os.stat(target_path).st_mode | stat.S_IEXEC)
-                print(f"Set executable permissions on {target_path}")
-            else:
-                print(f"WARNING: UMFPACK extension not found at {ext_path_umfpack}")
+                # Verify the extensions exist in their directories
+                superlu_dir = os.path.dirname(ext_path_superlu)
+                umfpack_dir = os.path.dirname(ext_path_umfpack)
 
-            # List contents of directories to verify
-            print(f"Contents of {target_superlu_dir}: {os.listdir(target_superlu_dir)}")
-            print(f"Contents of {target_umfpack_dir}: {os.listdir(target_umfpack_dir)}")
+                print(f"Contents of SuperLU directory: {os.listdir(superlu_dir)}")
+                print(f"Contents of UMFPACK directory: {os.listdir(umfpack_dir)}")
+
+            except Exception as e:
+                print(f"Error setting permissions on extensions: {e}")
 
 
 # Define platform-specific package data
@@ -431,6 +413,7 @@ if IS_WINDOWS:
     package_data['sparse_numba'] = [
         'vendor/superlu/bin/*.dll',
         'vendor/openblas/bin/*.dll',
+        '**/*.pyd',  # For Windows
         'sparse_superlu/*.py',
         'sparse_superlu/*.pyd',
         'sparse_superlu/test/*.py',
@@ -440,6 +423,7 @@ if IS_WINDOWS:
     ]
 elif IS_LINUX:
     package_data['sparse_numba'] = [
+        '**/*.so',  # Include all .so files
         'sparse_superlu/*.py',
         'sparse_superlu/*.so',
         'sparse_superlu/test/*.py',
@@ -449,11 +433,12 @@ elif IS_LINUX:
     ]
 elif IS_MACOS:
     package_data['sparse_numba'] = [
+        '**/*.so',  # Include all .so files
         'sparse_superlu/*.py',
-        'sparse_superlu/*.dylib',
+        'sparse_superlu/*.so',
         'sparse_superlu/test/*.py',
         'sparse_umfpack/*.py',
-        'sparse_umfpack/*.dylib',
+        'sparse_umfpack/*.so',
         'sparse_umfpack/test/*.py'
     ]
 
