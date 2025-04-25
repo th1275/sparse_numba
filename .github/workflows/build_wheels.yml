@@ -326,6 +326,7 @@ jobs:
           mkdir -p $SITE_PACKAGES/sparse_numba/sparse_umfpack
     
           # Find and copy the extension files from the wheel
+          PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
           WHEEL_FILE=$(ls wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-${{ matrix.wheel-suffix }}.whl | head -n 1)
           TMP_DIR=$(mktemp -d)
           unzip -o $WHEEL_FILE -d $TMP_DIR
