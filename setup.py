@@ -437,9 +437,11 @@ elif IS_MACOS:
         'sparse_superlu/*.py',
         'sparse_superlu/*.so',
         'sparse_superlu/test/*.py',
+        'sparse_superlu/*.dylib',
         'sparse_umfpack/*.py',
         'sparse_umfpack/*.so',
         'sparse_umfpack/test/*.py'
+        'sparse_umfpack/*.dylib'
     ]
 
 # Setup configuration
@@ -481,4 +483,5 @@ setup(
         "Operating System :: MacOS :: MacOS X",
     ],
     include_package_data=True,
+    zip_safe=False,  # This is important for extensions
 )
