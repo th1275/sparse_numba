@@ -1097,11 +1097,23 @@ if IS_WINDOWS:
         'sparse_umfpack/test/*.py'
     ]
 elif IS_LINUX:
-    # No need to include system libraries on Linux
-    pass
+    package_data['sparse_numba'] = [
+        'sparse_superlu/*.py',
+        'sparse_superlu/*.so',
+        'sparse_superlu/test/*.py',
+        'sparse_umfpack/*.py',
+        'sparse_umfpack/*.so',
+        'sparse_umfpack/test/*.py'
+    ]
 elif IS_MACOS:
-    # For macOS, we might include dylibs if we're bundling them
-    pass
+    package_data['sparse_numba'] = [
+        'sparse_superlu/*.py',
+        'sparse_superlu/*.dylib',
+        'sparse_superlu/test/*.py',
+        'sparse_umfpack/*.py',
+        'sparse_umfpack/*.dylib',
+        'sparse_umfpack/test/*.py'
+    ]
 
 # Setup configuration
 packages=[
