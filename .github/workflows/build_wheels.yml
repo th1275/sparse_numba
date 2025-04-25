@@ -146,65 +146,73 @@ jobs:
         run: |
           python -m cibuildwheel --output-dir wheelhouse
 
-      # Add this new step immediately after the Build wheels step
-      - name: Repair Linux wheels
-        if: runner.os == 'Linux'
+#      # Add this new step immediately after the Build wheels step
+#      - name: Repair Linux wheels
+#        if: runner.os == 'Linux'
+#        run: |
+#          echo "Repairing Linux wheels with auditwheel..."
+#          pip install auditwheel
+#          mkdir -p repaired_wheels
+#          for whl in wheelhouse/sparse_numba-*-linux_x86_64.whl; do
+#            if [ -f "$whl" ]; then
+#              echo "Repairing wheel: $whl"
+#              auditwheel repair "$whl" -w repaired_wheels/
+#            else
+#              echo "No Linux wheels found to repair"
+#            fi
+#          done
+#
+#          # List repaired wheels
+#          echo "Repaired wheels:"
+#          ls -la repaired_wheels/
+#
+#          # Replace original wheels with repaired ones
+#          if [ "$(ls -A repaired_wheels/)" ]; then
+#            echo "Replacing original wheels with repaired ones"
+#            cp repaired_wheels/*.whl wheelhouse/
+#          fi
+#
+#          # Final wheel listing
+#          echo "Final wheelhouse contents:"
+#          ls -la wheelhouse/
+#
+#      # For macOS, add a similar step with delocate
+#      - name: Repair macOS wheels
+#        if: runner.os == 'macOS'
+#        run: |
+#          echo "Repairing macOS wheels with delocate..."
+#          pip install delocate
+#          mkdir -p repaired_wheels
+#          for whl in wheelhouse/sparse_numba-*-macosx_*.whl; do
+#            if [ -f "$whl" ]; then
+#              echo "Repairing wheel: $whl"
+#              delocate-wheel -w repaired_wheels/ "$whl"
+#            else
+#              echo "No macOS wheels found to repair"
+#            fi
+#          done
+#
+#          # List repaired wheels
+#          echo "Repaired wheels:"
+#          ls -la repaired_wheels/
+#
+#          # Replace original wheels with repaired ones
+#          if [ "$(ls -A repaired_wheels/)" ]; then
+#            echo "Replacing original wheels with repaired ones"
+#            cp repaired_wheels/*.whl wheelhouse/
+#          fi
+#
+#          # Final wheel listing
+#          echo "Final wheelhouse contents:"
+#          ls -la wheelhouse/
+
+      - name: Fix Permissions
+        if: runner.os == 'Linux' || runner.os == 'macOS'
         run: |
-          echo "Repairing Linux wheels with auditwheel..."
-          pip install auditwheel
-          mkdir -p repaired_wheels
-          for whl in wheelhouse/sparse_numba-*-linux_x86_64.whl; do
-            if [ -f "$whl" ]; then
-              echo "Repairing wheel: $whl"
-              auditwheel repair "$whl" -w repaired_wheels/
-            else
-              echo "No Linux wheels found to repair"
-            fi
-          done
-
-          # List repaired wheels
-          echo "Repaired wheels:"
-          ls -la repaired_wheels/
-
-          # Replace original wheels with repaired ones
-          if [ "$(ls -A repaired_wheels/)" ]; then
-            echo "Replacing original wheels with repaired ones"
-            cp repaired_wheels/*.whl wheelhouse/
-          fi
-
-          # Final wheel listing
-          echo "Final wheelhouse contents:"
-          ls -la wheelhouse/
-
-      # For macOS, add a similar step with delocate
-      - name: Repair macOS wheels
-        if: runner.os == 'macOS'
-        run: |
-          echo "Repairing macOS wheels with delocate..."
-          pip install delocate
-          mkdir -p repaired_wheels
-          for whl in wheelhouse/sparse_numba-*-macosx_*.whl; do
-            if [ -f "$whl" ]; then
-              echo "Repairing wheel: $whl"
-              delocate-wheel -w repaired_wheels/ "$whl"
-            else
-              echo "No macOS wheels found to repair"
-            fi
-          done
-
-          # List repaired wheels
-          echo "Repaired wheels:"
-          ls -la repaired_wheels/
-
-          # Replace original wheels with repaired ones
-          if [ "$(ls -A repaired_wheels/)" ]; then
-            echo "Replacing original wheels with repaired ones"
-            cp repaired_wheels/*.whl wheelhouse/
-          fi
-
-          # Final wheel listing
-          echo "Final wheelhouse contents:"
-          ls -la wheelhouse/
+          find ./wheelhouse -name "*.so" -exec chmod +x {} \;
+          find ./wheelhouse -name "*.so" -exec ls -la {} \;
+#          find ./repaired_wheels -name "*.so" -exec chmod +x {} \;
+#          find ./repaired_wheels -name "*.so" -exec ls -la {} \;
 
       # Store the built wheels
       - name: Upload wheels as artifacts
@@ -213,7 +221,7 @@ jobs:
           name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
           path: |
             ./wheelhouse/*.whl
-            ./repaired_wheels/*.whl
+#            ./repaired_wheels/*.whl
 
   # Test job that runs after the wheels are built
   test_installation:
