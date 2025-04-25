@@ -14,7 +14,35 @@ on:
   workflow_dispatch:
 
 jobs:
+  check_duplicate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      is_tag: ${{ steps.check.outputs.is_tag }}
+    steps:
+      - id: check
+        run: |
+          # Check if this is a tag push
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "is_tag=true" >> $GITHUB_OUTPUT
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          # Check if this is a branch push that's not associated with a tag creation
+          elif [[ "${{ github.ref }}" == refs/heads/* ]] && [[ "${{ github.event_name }}" == "push" ]]; then
+            # If this commit has a tag pointing to it, skip branch-based run
+            if git fetch --tags && git tag --points-at HEAD | grep -q "^v"; then
+              echo "should_run=false" >> $GITHUB_OUTPUT
+            else
+              echo "should_run=true" >> $GITHUB_OUTPUT
+            fi
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "is_tag=false" >> $GITHUB_OUTPUT
+          fi
+
   build_wheels:
+    needs: check_duplicate
+    if: ${{ needs.check_duplicate.outputs.should_run == 'true' }}
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -145,7 +173,8 @@ jobs:
 
   # Test job that runs after the wheels are built
   test_installation:
-    needs: build_wheels
+    needs: [check_duplicate, build_wheels]
+    if: ${{ needs.check_duplicate.outputs.should_run == 'true' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -252,7 +281,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install numpy numba
           # Install wheel
-          pip install wheelhouse/*.whl
+          PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
+          pip install wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-*.whl
           # Copy the test script to a new location
           mkdir -p /tmp/test_dir
           cp run_tests.py /tmp/test_dir/
@@ -262,6 +292,8 @@ jobs:
 
   # Build source distribution (sdist) for PyPI
   build_sdist:
+    needs: check_duplicate
+    if: ${{ needs.check_duplicate.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -288,8 +320,9 @@ jobs:
 
   # Publish to PyPI when a tag is pushed
   upload_pypi:
-    needs: [build_wheels, build_sdist, test_installation]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [check_duplicate, build_wheels, build_sdist, test_installation]
+    if: ${{ needs.check_duplicate.outputs.should_run == 'true' && needs.check_duplicate.outputs.is_tag == 'true' }}
+    # if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
