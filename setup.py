@@ -1088,7 +1088,13 @@ package_data = {
 if IS_WINDOWS:
     package_data['sparse_numba'] = [
         'vendor/superlu/bin/*.dll',
-        'vendor/openblas/bin/*.dll'
+        'vendor/openblas/bin/*.dll',
+        'sparse_superlu/*.py',
+        'sparse_superlu/*.pyd',
+        'sparse_superlu/test/*.py',
+        'sparse_umfpack/*.py',
+        'sparse_umfpack/*.pyd',
+        'sparse_umfpack/test/*.py'
     ]
 elif IS_LINUX:
     # No need to include system libraries on Linux
@@ -1098,6 +1104,15 @@ elif IS_MACOS:
     pass
 
 # Setup configuration
+packages=[
+        'sparse_numba',
+        'sparse_numba.conversion',
+        'sparse_numba.sparse_superlu',
+        'sparse_numba.sparse_superlu.test',
+        'sparse_numba.sparse_umfpack',
+        'sparse_numba.sparse_umfpack.test',
+    ]
+
 setup(
     name="sparse_numba",
     version="0.1.10",
@@ -1107,7 +1122,8 @@ setup(
     author="Tianqi Hong",
     author_email="tianqi.hong@uga.edu",
     url="https://github.com/th1275/sparse_numba",
-    packages=find_packages(),
+    # packages=find_packages(),
+    packages=packages,
     ext_modules=extensions,
     cmdclass={
         'build_ext': CustomBuildExt,
@@ -1125,5 +1141,5 @@ setup(
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS :: MacOS X",
     ],
-    include_package_data=False,
+    include_package_data=True,
 )

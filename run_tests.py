@@ -316,7 +316,8 @@ def main():
                 logger.error(f"SuperLU libraries and extension are available but solver import failed: {e}")
                 success = False
             else:
-                logger.warning(f"SuperLU solver test skipped (expected): {e}")
+                logger.warning(f"SuperLU solver test skipped (no lib or extension): {e}")
+                success = False
         except Exception as e:
             logger.error(f"SuperLU solver test failed: {e}")
             import traceback
@@ -337,7 +338,7 @@ def main():
                 if libraries["umfpack"] and extensions["cy_umfpack_wrapper"]:
                     logger.error(f"UMFPACK libraries and extension are available but solver import failed: {e}")
                 else:
-                    logger.warning(f"UMFPACK solver test skipped (expected): {e}")
+                    logger.warning(f"UMFPACK solver test skipped (no lib or extension): {e}")
             except Exception as e:
                 logger.warning(f"UMFPACK solver test (optional): {e}")
                 # Don't fail the build if UMFPACK isn't available
