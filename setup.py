@@ -413,35 +413,31 @@ if IS_WINDOWS:
     package_data['sparse_numba'] = [
         'vendor/superlu/bin/*.dll',
         'vendor/openblas/bin/*.dll',
-        '**/*.pyd',  # For Windows
-        'sparse_superlu/*.py',
         'sparse_superlu/*.pyd',
-        'sparse_superlu/test/*.py',
-        'sparse_umfpack/*.py',
         'sparse_umfpack/*.pyd',
-        'sparse_umfpack/test/*.py'
+        'sparse_superlu/test/*.py',
+        'sparse_umfpack/test/*.py',
+        'conversion/*.py'
     ]
 elif IS_LINUX:
     package_data['sparse_numba'] = [
-        '**/*.so',  # Include all .so files
-        'sparse_superlu/*.py',
         'sparse_superlu/*.so',
-        'sparse_superlu/test/*.py',
-        'sparse_umfpack/*.py',
+        'sparse_superlu/cy_superlu_wrapper*.so',  # More specific pattern
         'sparse_umfpack/*.so',
-        'sparse_umfpack/test/*.py'
+        'sparse_umfpack/cy_umfpack_wrapper*.so',  # More specific pattern
+        'sparse_superlu/test/*.py',
+        'sparse_umfpack/test/*.py',
+        'conversion/*.py'
     ]
 elif IS_MACOS:
     package_data['sparse_numba'] = [
-        '**/*.so',  # Include all .so files
-        'sparse_superlu/*.py',
         'sparse_superlu/*.so',
-        'sparse_superlu/test/*.py',
         'sparse_superlu/*.dylib',
-        'sparse_umfpack/*.py',
         'sparse_umfpack/*.so',
-        'sparse_umfpack/test/*.py'
-        'sparse_umfpack/*.dylib'
+        'sparse_umfpack/*.dylib',
+        'sparse_superlu/test/*.py',
+        'sparse_umfpack/test/*.py',
+        'conversion/*.py'
     ]
 
 # Setup configuration

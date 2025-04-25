@@ -314,7 +314,29 @@ jobs:
             exit 1
           fi
           echo "Installing wheel: $WHEEL_FILE"
-          python -m pip install $WHEEL_FILE
+          python -m pip install $WHEEL_FILE --verbose
+
+      - name: Force extensions to correct locations after install
+        run: |
+          # Find the installed package location
+          SITE_PACKAGES=$(python -c "import site; print(site.getsitepackages()[0])")
+    
+          # Create directories if they don't exist
+          mkdir -p $SITE_PACKAGES/sparse_numba/sparse_superlu
+          mkdir -p $SITE_PACKAGES/sparse_numba/sparse_umfpack
+    
+          # Find and copy the extension files from the wheel
+          WHEEL_FILE=$(ls wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-${{ matrix.wheel-suffix }}.whl | head -n 1)
+          TMP_DIR=$(mktemp -d)
+          unzip -o $WHEEL_FILE -d $TMP_DIR
+    
+          # Copy extensions to the site-packages directory
+          find $TMP_DIR -name "cy_*wrapper*.so" -exec cp {} $SITE_PACKAGES/sparse_numba/sparse_superlu/ \;
+          find $TMP_DIR -name "cy_*wrapper*.so" -exec cp {} $SITE_PACKAGES/sparse_numba/sparse_umfpack/ \;
+    
+          # Check if files were copied
+          ls -la $SITE_PACKAGES/sparse_numba/sparse_superlu/
+          ls -la $SITE_PACKAGES/sparse_numba/sparse_umfpack/
 
 #      - name: Run extension diagnostics
 #        run: |
