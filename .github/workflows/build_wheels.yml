@@ -290,12 +290,21 @@ jobs:
         run: |
           brew install suite-sparse superlu openblas
 
-      - name: Inspect wheel contents
+      - name: Inspect linux wheel contents
+        if: runner.so == 'Linux'
         run: |
           python -m pip install wheel-inspect
           PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
           WHEEL_FILE=$(ls wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-${{ matrix.wheel-suffix }}.whl | head -n 1)
           python -m wheel_inspect $WHEEL_FILE
+          unzip -l $WHEEL_FILE | grep "cy_.*wrapper"
+
+      - name: Inspect macOS wheel contents
+        if: runner.so == 'macOS'
+        run: |
+          python -m pip install wheel-inspect
+          PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
+          WHEEL_FILE=$(ls wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-${{ matrix.wheel-suffix }}.whl | head -n 1)
           unzip -l $WHEEL_FILE | grep "cy_.*wrapper"
 
       - name: Install the wheel
