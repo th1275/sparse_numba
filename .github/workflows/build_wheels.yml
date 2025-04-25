@@ -21,8 +21,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-13]  # Changed to macos-13 for consistency
-        # python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
-        python-version: ['3.11']
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
+#        python-version: ['3.11']
 
     steps:
       - uses: actions/checkout@v4
@@ -79,8 +79,8 @@ jobs:
       # Build wheels using cibuildwheel
       - name: Build wheels
         env:
-#          CIBW_BUILD: 'cp38-* cp39-* cp310-* cp311-* cp312-*'
-          CIBW_BUILD: 'cp311-*'
+          CIBW_BUILD: 'cp38-* cp39-* cp310-* cp311-* cp312-*'
+#          CIBW_BUILD: 'cp311-*'
           CIBW_SKIP: '*-musllinux* pp*'
           # Add this to ensure extensions are built
           CIBW_BEFORE_BUILD: >
@@ -131,89 +131,9 @@ jobs:
             mkdir -p $HOME/homebrew_libs/openblas/lib;
             ln -sf $OPENBLAS_PREFIX/lib/libopenblas.dylib $HOME/homebrew_libs/openblas/lib/;
             echo "Created symlink in $HOME/homebrew_libs/openblas/lib/"
-#          # Force wheel repair to use correct deployment target
-#          CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
-#            MACOSX_DEPLOYMENT_TARGET=13.0 delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
-#          CIBW_TEST_REQUIRES: >
-#            numpy
-#            numba
-#            cython
-#          CIBW_TEST_COMMAND: >
-#            cd {project} &&
-#            python -c "import sys; print('Python version:', sys.version); print('sys.path:', sys.path)" &&
-#            python check_extensions.py &&
-#            python run_tests.py ||
-#            echo "Tests failed but continuing to build other wheels"
+
         run: |
           python -m cibuildwheel --output-dir wheelhouse
-
-#      # Add this new step immediately after the Build wheels step
-#      - name: Repair Linux wheels
-#        if: runner.os == 'Linux'
-#        run: |
-#          echo "Repairing Linux wheels with auditwheel..."
-#          pip install auditwheel
-#          mkdir -p repaired_wheels
-#          for whl in wheelhouse/sparse_numba-*-linux_x86_64.whl; do
-#            if [ -f "$whl" ]; then
-#              echo "Repairing wheel: $whl"
-#              auditwheel repair "$whl" -w repaired_wheels/
-#            else
-#              echo "No Linux wheels found to repair"
-#            fi
-#          done
-#
-#          # List repaired wheels
-#          echo "Repaired wheels:"
-#          ls -la repaired_wheels/
-#
-#          # Replace original wheels with repaired ones
-#          if [ "$(ls -A repaired_wheels/)" ]; then
-#            echo "Replacing original wheels with repaired ones"
-#            cp repaired_wheels/*.whl wheelhouse/
-#          fi
-#
-#          # Final wheel listing
-#          echo "Final wheelhouse contents:"
-#          ls -la wheelhouse/
-#
-#      # For macOS, add a similar step with delocate
-#      - name: Repair macOS wheels
-#        if: runner.os == 'macOS'
-#        run: |
-#          echo "Repairing macOS wheels with delocate..."
-#          pip install delocate
-#          mkdir -p repaired_wheels
-#          for whl in wheelhouse/sparse_numba-*-macosx_*.whl; do
-#            if [ -f "$whl" ]; then
-#              echo "Repairing wheel: $whl"
-#              delocate-wheel -w repaired_wheels/ "$whl"
-#            else
-#              echo "No macOS wheels found to repair"
-#            fi
-#          done
-#
-#          # List repaired wheels
-#          echo "Repaired wheels:"
-#          ls -la repaired_wheels/
-#
-#          # Replace original wheels with repaired ones
-#          if [ "$(ls -A repaired_wheels/)" ]; then
-#            echo "Replacing original wheels with repaired ones"
-#            cp repaired_wheels/*.whl wheelhouse/
-#          fi
-#
-#          # Final wheel listing
-#          echo "Final wheelhouse contents:"
-#          ls -la wheelhouse/
-
-#      - name: Fix Permissions
-#        if: runner.os == 'Linux' || runner.os == 'macOS'
-#        run: |
-#          find ./wheelhouse -name "*.so" -exec chmod +x {} \;
-#          find ./wheelhouse -name "*.so" -exec ls -la {} \;
-##          find ./repaired_wheels -name "*.so" -exec chmod +x {} \;
-##          find ./repaired_wheels -name "*.so" -exec ls -la {} \;
 
       # Store the built wheels
       - name: Upload wheels as artifacts
@@ -222,7 +142,6 @@ jobs:
           name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
           path: |
             ./wheelhouse/*.whl
-#            ./repaired_wheels/*.whl
 
   # Test job that runs after the wheels are built
   test_installation:
@@ -233,37 +152,37 @@ jobs:
       matrix:
         include:
           # Linux x86_64
-#          - os: ubuntu-latest
-#            python-version: '3.8'
-#            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
-#          - os: ubuntu-latest
-#            python-version: '3.9'
-#            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
-#          - os: ubuntu-latest
-#            python-version: '3.10'
-#            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
+          - os: ubuntu-latest
+            python-version: '3.8'
+            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
+          - os: ubuntu-latest
+            python-version: '3.9'
+            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
+          - os: ubuntu-latest
+            python-version: '3.10'
+            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
           - os: ubuntu-latest
             python-version: '3.11'
             wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
-#          - os: ubuntu-latest
-#            python-version: '3.12'
-#            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
-          # macOS x86_64
-#          - os: macos-13  # This is x86_64
-#            python-version: '3.8'
-#            wheel-suffix: 'macosx_13_0_x86_64'  # Changed to match deployment target
-#          - os: macos-13
-#            python-version: '3.9'
-#            wheel-suffix: 'macosx_13_0_x86_64'
-#          - os: macos-13
-#            python-version: '3.10'
-#            wheel-suffix: 'macosx_13_0_x86_64'
+          - os: ubuntu-latest
+            python-version: '3.12'
+            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
+           # macOS x86_64
+          - os: macos-13  # This is x86_64
+            python-version: '3.8'
+            wheel-suffix: 'macosx_13_0_x86_64'  # Changed to match deployment target
+          - os: macos-13
+            python-version: '3.9'
+            wheel-suffix: 'macosx_13_0_x86_64'
+          - os: macos-13
+            python-version: '3.10'
+            wheel-suffix: 'macosx_13_0_x86_64'
           - os: macos-13
             python-version: '3.11'
             wheel-suffix: 'macosx_13_0_x86_64'
-#          - os: macos-13
-#            python-version: '3.12'
-#            wheel-suffix: 'macosx_13_0_x86_64'
+          - os: macos-13
+            python-version: '3.12'
+            wheel-suffix: 'macosx_13_0_x86_64'
 
     steps:
       - uses: actions/checkout@v4

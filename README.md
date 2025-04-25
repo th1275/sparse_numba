@@ -31,7 +31,11 @@ Due to the license issue, this package cannot include DLLs from umfpack. To run 
 .venv/site-packages/sparse_numba/vendor/suitesparse/bin
 ```
 - Support for SuperLU solver has been added in the version 0.1.6. 
-- github workflow is under testing in version 0.1.10.
+- Github workflow is under testing in version 0.1.10.
+- Current Compatibility
+  - Windows Platform for Python Version from 3.8 - 3.12
+  - Most modern Linux distributions (Ubuntu, Debian, CentOS, Fedora, etc.) for Python Version from 3.8 - 3.12
+  - MacOS version > 13.0 and intel x86_64 CPU
 
 
 
