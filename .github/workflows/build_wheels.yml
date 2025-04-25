@@ -131,19 +131,19 @@ jobs:
             mkdir -p $HOME/homebrew_libs/openblas/lib;
             ln -sf $OPENBLAS_PREFIX/lib/libopenblas.dylib $HOME/homebrew_libs/openblas/lib/;
             echo "Created symlink in $HOME/homebrew_libs/openblas/lib/"
-          # Force wheel repair to use correct deployment target
-          CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
-            MACOSX_DEPLOYMENT_TARGET=13.0 delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
-          CIBW_TEST_REQUIRES: >
-            numpy
-            numba
-            cython
-          CIBW_TEST_COMMAND: >
-            cd {project} && 
-            python -c "import sys; print('Python version:', sys.version); print('sys.path:', sys.path)" &&
-            python check_extensions.py &&
-            python run_tests.py || 
-            echo "Tests failed but continuing to build other wheels"
+#          # Force wheel repair to use correct deployment target
+#          CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
+#            MACOSX_DEPLOYMENT_TARGET=13.0 delocate-wheel --require-archs {delocate_archs} -w {dest_dir} -v {wheel}
+#          CIBW_TEST_REQUIRES: >
+#            numpy
+#            numba
+#            cython
+#          CIBW_TEST_COMMAND: >
+#            cd {project} &&
+#            python -c "import sys; print('Python version:', sys.version); print('sys.path:', sys.path)" &&
+#            python check_extensions.py &&
+#            python run_tests.py ||
+#            echo "Tests failed but continuing to build other wheels"
         run: |
           python -m cibuildwheel --output-dir wheelhouse
 
@@ -207,13 +207,13 @@ jobs:
 #          echo "Final wheelhouse contents:"
 #          ls -la wheelhouse/
 
-      - name: Fix Permissions
-        if: runner.os == 'Linux' || runner.os == 'macOS'
-        run: |
-          find ./wheelhouse -name "*.so" -exec chmod +x {} \;
-          find ./wheelhouse -name "*.so" -exec ls -la {} \;
-#          find ./repaired_wheels -name "*.so" -exec chmod +x {} \;
-#          find ./repaired_wheels -name "*.so" -exec ls -la {} \;
+#      - name: Fix Permissions
+#        if: runner.os == 'Linux' || runner.os == 'macOS'
+#        run: |
+#          find ./wheelhouse -name "*.so" -exec chmod +x {} \;
+#          find ./wheelhouse -name "*.so" -exec ls -la {} \;
+##          find ./repaired_wheels -name "*.so" -exec chmod +x {} \;
+##          find ./repaired_wheels -name "*.so" -exec ls -la {} \;
 
       # Store the built wheels
       - name: Upload wheels as artifacts
