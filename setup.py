@@ -53,7 +53,12 @@ if IS_WINDOWS:
         "suitesparseconfig", "openblas"
     ]
     superlu_libraries = ["superlu", "openblas"]
-    extra_compile_args = ["-O3", "-DSIZEOF_VOID_P=8"]
+    # Use MS_WIN64 to help pyconfig.h detect 64-bit correctly with MinGW.
+    # Don't pass -DSIZEOF_VOID_P directly — it conflicts with pyconfig.h's own definition.
+    import struct
+    extra_compile_args = ["-O3"]
+    if struct.calcsize("P") == 8:
+        extra_compile_args.append("-DMS_WIN64")
     extra_link_args = []
 elif IS_LINUX:
     # On Linux, we'll use system libraries if available

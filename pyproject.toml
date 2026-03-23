@@ -1,10 +1,10 @@
 #[build-system]
-#requires = ["setuptools>=42", "wheel", "Cython>=0.29.21", "numpy>=1.13.3", "numba>=0.58.0"]
+#requires = ["setuptools>=42", "wheel", "Cython>=0.29.21", "numpy>=1.13.3"]
 #build-backend = "setuptools.build_meta"
 #
 #[tool.cibuildwheel]
 ## Configuration for building wheels using cibuildwheel
-#skip = "pp* *-musllinux*"  # Skip PyPy and musllinux builds
+#skip = "*-musllinux*"  # Skip musllinux builds
 #
 ## Linux build configuration
 #[tool.cibuildwheel.linux]
@@ -20,12 +20,12 @@
 #CXXFLAGS = "-O3"
 
 [build-system]
-requires = ["setuptools>=42", "wheel", "Cython>=0.29.21", "numpy>=1.13.3", "numba>=0.58.0"]
+requires = ["setuptools>=42", "wheel", "Cython>=0.29.21", "numpy>=1.13.3"]
 build-backend = "setuptools.build_meta"
 
 [tool.cibuildwheel]
 # Configuration for building wheels using cibuildwheel
-skip = "pp* *-musllinux*"  # Skip PyPy and musllinux builds
+skip = "*-musllinux*"  # Skip musllinux builds
 
 # Linux build configuration
 [tool.cibuildwheel.linux]
