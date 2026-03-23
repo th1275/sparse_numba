@@ -154,6 +154,10 @@ jobs:
             mkdir -p $HOME/homebrew_libs/openblas/lib;
             ln -sf $OPENBLAS_PREFIX/lib/libopenblas.dylib $HOME/homebrew_libs/openblas/lib/;
             echo "Created symlink in $HOME/homebrew_libs/openblas/lib/"
+          # Skip delocate on macOS — we rely on system-installed libs (brew)
+          # just like Linux relies on system libs without bundling
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
+            cp {wheel} {dest_dir}/
           CIBW_ARCHS_WINDOWS: 'AMD64'
           CIBW_ENVIRONMENT_WINDOWS: >
             CI=true
