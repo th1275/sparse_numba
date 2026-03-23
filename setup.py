@@ -478,7 +478,7 @@ setup(
         'build_ext': CustomBuildExt,
     },
     package_data=package_data,
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     install_requires=[
         "numpy>=1.13.3",
         "numba>=0.58.0",

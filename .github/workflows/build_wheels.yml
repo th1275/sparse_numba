@@ -52,9 +52,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-13, windows-latest]
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
-#        python-version: ['3.11']
+        os: [ubuntu-latest, macos-15-intel, windows-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12']
 
     steps:
       - uses: actions/checkout@v4
@@ -96,10 +95,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          # Install MinGW-w64 via Chocolatey (provides gcc for Cython compilation)
-          choco install mingw -y --no-progress
-          echo "MinGW installed"
-          gcc --version
+          # MinGW-w64 is pre-installed on windows-latest runner
+          echo "Checking MinGW..."
+          gcc --version || (echo "MinGW not found, installing..." && choco install mingw -y --no-progress)
+          # Find MinGW bin directory and add to PATH
+          MINGW_BIN=$(dirname "$(which gcc)")
+          echo "MinGW bin: $MINGW_BIN"
+          echo "$MINGW_BIN" >> $GITHUB_PATH
           # Verify vendor libraries exist (these are checked into the repo)
           echo "Checking vendor libraries..."
           ls -la vendor/superlu/lib/ || echo "WARNING: SuperLU libs not found"
@@ -127,9 +129,8 @@ jobs:
       # Build wheels using cibuildwheel
       - name: Build wheels
         env:
-          CIBW_BUILD: 'cp38-* cp39-* cp310-* cp311-* cp312-*'
-#          CIBW_BUILD: 'cp311-*'
-          CIBW_SKIP: '*-musllinux* pp*'
+          CIBW_BUILD: 'cp39-* cp310-* cp311-* cp312-*'
+          CIBW_SKIP: '*-musllinux*'
           # Add this to ensure extensions are built
           CIBW_BEFORE_BUILD: >
             pip install numpy cython
@@ -149,7 +150,7 @@ jobs:
             GITHUB_ACTIONS=true
             CFLAGS='-O3'
             CXXFLAGS='-O3'
-            MACOSX_DEPLOYMENT_TARGET=13.0
+            MACOSX_DEPLOYMENT_TARGET=15.0
           # manylinux configuration - install required packages
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
           CIBW_BEFORE_ALL_LINUX: |
@@ -157,10 +158,10 @@ jobs:
             yum install -y openblas-devel SuperLU-devel suitesparse-devel ||
             yum install -y openblas-devel superlu-devel suitesparse-devel ||
             (apt-get update && apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev)
-            
+
             # Check SuperLU header location
             find /usr -name "slu_ddefs.h" || echo "SuperLU headers not found"
-            
+
             # If header is found, create a symlink in a standard location
             HEADER_PATH=$(find /usr -name "slu_ddefs.h" | head -1)
             if [ -n "$HEADER_PATH" ]; then
@@ -179,7 +180,7 @@ jobs:
             mkdir -p $HOME/homebrew_libs/openblas/lib;
             ln -sf $OPENBLAS_PREFIX/lib/libopenblas.dylib $HOME/homebrew_libs/openblas/lib/;
             echo "Created symlink in $HOME/homebrew_libs/openblas/lib/"
-          # Windows configuration - use vendor libraries from the repo
+          # Windows configuration - use vendor libraries from the repo with MinGW
           CIBW_ARCHS_WINDOWS: 'AMD64'
           CIBW_ENVIRONMENT_WINDOWS: >
             CI=true
@@ -187,7 +188,8 @@ jobs:
             SPARSE_NUMBA_SKIP_UMFPACK=1
             DISTUTILS_USE_SDK=0
           CIBW_BEFORE_BUILD_WINDOWS: >
-            pip install numpy cython &&
+            pip install numpy cython setuptools &&
+            python -c "import distutils, os; f=os.path.join(os.path.dirname(distutils.__file__),'distutils.cfg'); open(f,'w').write('[build]\ncompiler=mingw32\n[build_ext]\ncompiler=mingw32\n')" &&
             gcc --version
 
         run: |
@@ -212,9 +214,6 @@ jobs:
         include:
           # Linux x86_64
           - os: ubuntu-latest
-            python-version: '3.8'
-            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
-          - os: ubuntu-latest
             python-version: '3.9'
             wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
           - os: ubuntu-latest
@@ -226,26 +225,20 @@ jobs:
           - os: ubuntu-latest
             python-version: '3.12'
             wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
-           # macOS x86_64
-          - os: macos-13  # This is x86_64
-            python-version: '3.8'
-            wheel-suffix: 'macosx_13_0_x86_64'  # Changed to match deployment target
-          - os: macos-13
+          # macOS x86_64 (Intel)
+          - os: macos-15-intel
             python-version: '3.9'
-            wheel-suffix: 'macosx_13_0_x86_64'
-          - os: macos-13
+            wheel-suffix: 'macosx_15_0_x86_64'
+          - os: macos-15-intel
             python-version: '3.10'
-            wheel-suffix: 'macosx_13_0_x86_64'
-          - os: macos-13
+            wheel-suffix: 'macosx_15_0_x86_64'
+          - os: macos-15-intel
             python-version: '3.11'
-            wheel-suffix: 'macosx_13_0_x86_64'
-          - os: macos-13
+            wheel-suffix: 'macosx_15_0_x86_64'
+          - os: macos-15-intel
             python-version: '3.12'
-            wheel-suffix: 'macosx_13_0_x86_64'
+            wheel-suffix: 'macosx_15_0_x86_64'
           # Windows x86_64
-          - os: windows-latest
-            python-version: '3.8'
-            wheel-suffix: 'win_amd64'
           - os: windows-latest
             python-version: '3.9'
             wheel-suffix: 'win_amd64'
@@ -285,7 +278,7 @@ jobs:
           brew install suite-sparse superlu openblas
 
       - name: Inspect linux wheel contents
-        if: runner.so == 'Linux'
+        if: runner.os == 'Linux'
         run: |
           python -m pip install wheel-inspect
           PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
@@ -294,7 +287,7 @@ jobs:
           unzip -l $WHEEL_FILE | grep "cy_.*wrapper"
 
       - name: Inspect macOS wheel contents
-        if: runner.so == 'macOS'
+        if: runner.os == 'macOS'
         run: |
           python -m pip install wheel-inspect
           PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
@@ -406,7 +399,6 @@ jobs:
   upload_pypi:
     needs: [check_duplicate, build_wheels, build_sdist, test_installation]
     if: ${{ needs.check_duplicate.outputs.should_run == 'true' && needs.check_duplicate.outputs.is_tag == 'true' }}
-    # if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
