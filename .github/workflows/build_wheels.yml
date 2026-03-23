@@ -20,6 +20,10 @@ jobs:
       should_run: ${{ steps.check.outputs.should_run }}
       is_tag: ${{ steps.check.outputs.is_tag }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # This ensures all tags are fetched
+
       - id: check
         run: |
           # Check if this is a tag push
@@ -29,7 +33,7 @@ jobs:
           # Check if this is a branch push that's not associated with a tag creation
           elif [[ "${{ github.ref }}" == refs/heads/* ]] && [[ "${{ github.event_name }}" == "push" ]]; then
             # If this commit has a tag pointing to it, skip branch-based run
-            if git fetch --tags && git tag --points-at HEAD | grep -q "^v"; then
+            if git tag --points-at HEAD | grep -q "^v"; then
               echo "should_run=false" >> $GITHUB_OUTPUT
             else
               echo "should_run=true" >> $GITHUB_OUTPUT
