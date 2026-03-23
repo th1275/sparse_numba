@@ -240,7 +240,15 @@ initialize_superlu()
 __all__ = [
     'matrix_conversion_numba',
     'is_slu_available',
-    'is_umf_available'
+    'is_umf_available',
+    # Pre-factorization API (SuperLU)
+    'superlu_factorize_csc', 'superlu_factorize_coo', 'superlu_factorize_csr',
+    'superlu_solve_factored', 'superlu_free_factors',
+    # Pre-factorization API (UMFPACK)
+    'umfpack_factorize_csc', 'umfpack_factorize_coo', 'umfpack_factorize_csr',
+    'umfpack_solve_factored', 'umfpack_free_factors',
+    # Sparse utilities
+    'convert_coo_to_csr', 'sparse_matvec_csr',
 ]
 
 def is_slu_available():

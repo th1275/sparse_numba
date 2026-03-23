@@ -10,6 +10,7 @@
 /vendor/superlu/lib/
 /vendor/superlu/bin/*
 !/vendor/superlu/bin/.placeholder
+!/vendor/superlu/bin/*.dll
 
 /build/
 /.venv/

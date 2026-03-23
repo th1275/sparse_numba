@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-13]  # Changed to macos-13 for consistency
+        os: [ubuntu-latest, macos-13, windows-latest]
         python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
 #        python-version: ['3.11']
 
@@ -86,6 +86,22 @@ jobs:
               echo "Created SuperLU header symlinks in /usr/include/superlu/"
             fi
           fi
+
+      # Windows specific setup - uses vendor libraries checked into the repo
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # Install MinGW-w64 via Chocolatey (provides gcc for Cython compilation)
+          choco install mingw -y --no-progress
+          echo "MinGW installed"
+          gcc --version
+          # Verify vendor libraries exist (these are checked into the repo)
+          echo "Checking vendor libraries..."
+          ls -la vendor/superlu/lib/ || echo "WARNING: SuperLU libs not found"
+          ls -la vendor/superlu/bin/ || echo "WARNING: SuperLU bin not found"
+          ls -la vendor/openblas/bin/ || echo "WARNING: OpenBLAS bin not found"
+          ls -la vendor/superlu/include/ || echo "WARNING: SuperLU headers not found"
 
       # macOS specific setup
       - name: Install macOS dependencies
@@ -159,6 +175,16 @@ jobs:
             mkdir -p $HOME/homebrew_libs/openblas/lib;
             ln -sf $OPENBLAS_PREFIX/lib/libopenblas.dylib $HOME/homebrew_libs/openblas/lib/;
             echo "Created symlink in $HOME/homebrew_libs/openblas/lib/"
+          # Windows configuration - use vendor libraries from the repo
+          CIBW_ARCHS_WINDOWS: 'AMD64'
+          CIBW_ENVIRONMENT_WINDOWS: >
+            CI=true
+            GITHUB_ACTIONS=true
+            SPARSE_NUMBA_SKIP_UMFPACK=1
+            DISTUTILS_USE_SDK=0
+          CIBW_BEFORE_BUILD_WINDOWS: >
+            pip install numpy cython &&
+            gcc --version
 
         run: |
           python -m cibuildwheel --output-dir wheelhouse
@@ -212,6 +238,22 @@ jobs:
           - os: macos-13
             python-version: '3.12'
             wheel-suffix: 'macosx_13_0_x86_64'
+          # Windows x86_64
+          - os: windows-latest
+            python-version: '3.8'
+            wheel-suffix: 'win_amd64'
+          - os: windows-latest
+            python-version: '3.9'
+            wheel-suffix: 'win_amd64'
+          - os: windows-latest
+            python-version: '3.10'
+            wheel-suffix: 'win_amd64'
+          - os: windows-latest
+            python-version: '3.11'
+            wheel-suffix: 'win_amd64'
+          - os: windows-latest
+            python-version: '3.12'
+            wheel-suffix: 'win_amd64'
 
     steps:
       - uses: actions/checkout@v4
@@ -255,7 +297,8 @@ jobs:
           WHEEL_FILE=$(ls wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-${{ matrix.wheel-suffix }}.whl | head -n 1)
           unzip -l $WHEEL_FILE | grep "cy_.*wrapper"
 
-      - name: Install the wheel
+      - name: Install the wheel (Unix)
+        if: runner.os != 'Windows'
         run: |
           python -m pip install --upgrade pip
           python -m pip install numpy numba
@@ -265,7 +308,7 @@ jobs:
           # Install the specific wheel for this platform/Python combination
           PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
           WHEEL_FILE=$(ls wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-${{ matrix.wheel-suffix }}.whl | head -n 1)
-          
+
           if [ -z "$WHEEL_FILE" ]; then
             echo "Error: No matching wheel found for Python ${{ matrix.python-version }} and suffix ${{ matrix.wheel-suffix }}"
             exit 1
@@ -273,7 +316,27 @@ jobs:
           echo "Installing wheel: $WHEEL_FILE"
           python -m pip install $WHEEL_FILE --verbose
 
-      - name: Run tests
+      - name: Install the wheel (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy numba
+          # List available wheels
+          Write-Host "Available wheels:"
+          Get-ChildItem wheelhouse/ -Filter *.whl
+          # Find and install the matching wheel
+          $pyver = "${{ matrix.python-version }}" -replace '\.', ''
+          $wheel = Get-ChildItem wheelhouse/sparse_numba-*-cp${pyver}-*-${{ matrix.wheel-suffix }}.whl | Select-Object -First 1
+          if (-not $wheel) {
+            Write-Error "No matching wheel found"
+            exit 1
+          }
+          Write-Host "Installing wheel: $($wheel.FullName)"
+          python -m pip install $wheel.FullName --verbose
+
+      - name: Run tests (Unix)
+        if: runner.os != 'Windows'
         run: |
           # Create a clean virtual environment
           python -m venv test_venv
@@ -288,6 +351,23 @@ jobs:
           cp run_tests.py /tmp/test_dir/
           # Change to the new directory and run tests
           cd /tmp/test_dir
+          python run_tests.py
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Install directly (no venv needed for isolation in CI)
+          python -m pip install --upgrade pip
+          python -m pip install numpy numba
+          $pyver = "${{ matrix.python-version }}" -replace '\.', ''
+          $wheel = Get-ChildItem wheelhouse/sparse_numba-*-cp${pyver}-*-*.whl | Select-Object -First 1
+          python -m pip install $wheel.FullName
+          # Copy test script to temp dir and run from there
+          $testDir = Join-Path $env:RUNNER_TEMP "test_dir"
+          New-Item -ItemType Directory -Force -Path $testDir
+          Copy-Item run_tests.py $testDir/
+          Set-Location $testDir
           python run_tests.py
 
   # Build source distribution (sdist) for PyPI

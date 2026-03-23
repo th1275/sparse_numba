@@ -33,7 +33,11 @@ functype = ctypes.CFUNCTYPE(
 )
 c_solve_sparse_system = functype(addr)
 
-__all__ = ['umfpack_solve_csc', 'umfpack_solve_coo', 'umfpack_solve_csr']
+__all__ = [
+    'umfpack_solve_csc', 'umfpack_solve_coo', 'umfpack_solve_csr',
+    'umfpack_factorize_csc', 'umfpack_factorize_coo', 'umfpack_factorize_csr',
+    'umfpack_solve_factored', 'umfpack_free_factors',
+]
 
 
 @njit(nogil=True)
@@ -167,3 +171,210 @@ def umfpack_solve_csr(csr_data, csr_indices, csr_indptr, b):
     )
 
     return umfpack_solve_csc(csc_data, csc_indices, csc_indptr, b_f64)
+
+
+# ================================================================
+# Pre-factorization API: factorize once, solve many times
+# ================================================================
+
+# Load the factorize function
+addr_factorize = get_cython_function_address(
+    "sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
+    "cy_factorize_sparse_system")
+functype_factorize = ctypes.CFUNCTYPE(
+    ctypes.c_int,       # return: status
+    ctypes.c_void_p,    # values
+    ctypes.c_void_p,    # rowind
+    ctypes.c_void_p,    # colptr
+    ctypes.c_int,       # nrows
+    ctypes.c_int,       # ncols
+    ctypes.c_int,       # nnz
+    ctypes.c_void_p,    # handle_out (pointer to int64)
+)
+c_factorize_sparse_system = functype_factorize(addr_factorize)
+
+# Load the solve-with-factors function
+addr_solve_factored = get_cython_function_address(
+    "sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
+    "cy_solve_with_factors")
+functype_solve_factored = ctypes.CFUNCTYPE(
+    ctypes.c_int,       # return: status
+    ctypes.c_int64,     # handle (int64)
+    ctypes.c_void_p,    # rhs
+    ctypes.c_void_p,    # solution
+    ctypes.c_int,       # nrhs
+)
+c_solve_with_factors = functype_solve_factored(addr_solve_factored)
+
+# Load the free-factors function
+addr_free = get_cython_function_address(
+    "sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
+    "cy_free_sparse_factors")
+functype_free = ctypes.CFUNCTYPE(
+    ctypes.c_int,       # return: status
+    ctypes.c_int64,     # handle
+)
+c_free_sparse_factors = functype_free(addr_free)
+
+
+@njit(nogil=True)
+def umfpack_factorize_csc(csc_data, csc_indices, csc_indptr):
+    """
+    Pre-factorize a sparse matrix in CSC format using UMFPACK.
+
+    Parameters:
+    -----------
+    csc_data : ndarray (float64)
+        Nonzero values in CSC format
+    csc_indices : ndarray (int32)
+        Row indices in CSC format
+    csc_indptr : ndarray (int32)
+        Column pointers in CSC format
+
+    Returns:
+    --------
+    handle : int64
+        Opaque handle to the stored factors.
+        Must be freed with umfpack_free_factors(handle).
+    info : int
+        Status code (0 for success)
+    """
+    data = np.ascontiguousarray(csc_data)
+    indices = np.ascontiguousarray(csc_indices)
+    indptr = np.ascontiguousarray(csc_indptr)
+
+    n_cols = len(indptr) - 1
+    n_rows = n_cols  # Square matrix assumption
+    nnz = len(data)
+
+    if indptr[0] != 0:
+        print("Error: First element of indptr must be 0")
+        return np.int64(0), -1
+    if indptr[n_cols] != nnz:
+        print("Error: Last element of indptr must equal nnz")
+        return np.int64(0), -2
+
+    handle_arr = np.zeros(1, dtype=np.int64)
+
+    info = c_factorize_sparse_system(
+        data.ctypes.data,
+        indices.ctypes.data,
+        indptr.ctypes.data,
+        n_rows,
+        n_cols,
+        nnz,
+        handle_arr.ctypes.data,
+    )
+
+    return handle_arr[0], info
+
+
+@njit(nogil=True)
+def umfpack_solve_factored(handle, b):
+    """
+    Solve A*x = b using pre-computed factors from umfpack_factorize_*().
+
+    Parameters:
+    -----------
+    handle : int64
+        Factors handle from umfpack_factorize_*()
+    b : ndarray (float64)
+        Right-hand side vector
+
+    Returns:
+    --------
+    x : ndarray (float64)
+        Solution vector
+    info : int
+        Status code (0 for success)
+    """
+    rhs = np.ascontiguousarray(b)
+    n = len(rhs)
+    result = np.zeros(n, dtype=np.float64)
+
+    info = c_solve_with_factors(
+        handle,
+        rhs.ctypes.data,
+        result.ctypes.data,
+        1,
+    )
+
+    return result, info
+
+
+@njit(nogil=True)
+def umfpack_free_factors(handle):
+    """
+    Free memory associated with UMFPACK factors.
+
+    Parameters:
+    -----------
+    handle : int64
+        Factors handle from umfpack_factorize_*()
+
+    Returns:
+    --------
+    info : int
+        Status code (0 for success)
+    """
+    info = c_free_sparse_factors(handle)
+    return info
+
+
+@njit(nogil=True)
+def umfpack_factorize_coo(row_indices, col_indices, data, shape):
+    """
+    Pre-factorize a sparse matrix in COO format using UMFPACK.
+    Converts to CSC internally, then factorizes.
+
+    Parameters:
+    -----------
+    row_indices : ndarray (int32)
+    col_indices : ndarray (int32)
+    data : ndarray (float64)
+    shape : tuple (n_rows, n_cols)
+
+    Returns:
+    --------
+    handle : int64
+    info : int
+    """
+    n_rows, n_cols = shape
+
+    data_f64 = np.ascontiguousarray(data)
+    row_indices_i32 = np.ascontiguousarray(row_indices)
+    col_indices_i32 = np.ascontiguousarray(col_indices)
+
+    csc_data, csc_indices, csc_indptr = convert_coo_to_csc(
+        row_indices_i32, col_indices_i32, data_f64, n_rows, n_cols
+    )
+
+    return umfpack_factorize_csc(csc_data, csc_indices, csc_indptr)
+
+
+@njit(nogil=True)
+def umfpack_factorize_csr(csr_data, csr_indices, csr_indptr):
+    """
+    Pre-factorize a sparse matrix in CSR format using UMFPACK.
+    Converts to CSC internally, then factorizes.
+
+    Parameters:
+    -----------
+    csr_data : ndarray (float64)
+    csr_indices : ndarray (int32)
+    csr_indptr : ndarray (int32)
+
+    Returns:
+    --------
+    handle : int64
+    info : int
+    """
+    csr_data_f64 = csr_data.astype(np.float64)
+    csr_indices_i32 = csr_indices.astype(np.int32)
+    csr_indptr_i32 = csr_indptr.astype(np.int32)
+
+    csc_data, csc_indices, csc_indptr = convert_csr_to_csc(
+        csr_data_f64, csr_indices_i32, csr_indptr_i32
+    )
+
+    return umfpack_factorize_csc(csc_data, csc_indices, csc_indptr)

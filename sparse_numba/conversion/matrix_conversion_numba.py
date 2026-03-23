@@ -2,6 +2,8 @@
 Conversion functions module.
     convert_coo_to_csc
     convert_csr_to_csc
+    convert_coo_to_csr
+    sparse_matvec_csr
 """
 
 #  [sparse_numba] (C)2025-2025 Tianqi Hong
@@ -416,6 +418,149 @@ def check_matrix_properties(csc_data, csc_indices, csc_indptr, n_rows):
     is_singular = (missing_diags > 0) or (diag_ratio < 1e-10) or (condition_est > 1e15)
 
     return is_singular, condition_est, diag_ratio
+
+
+@njit
+def convert_coo_to_csr(row_indices, col_indices, data, n_rows, n_cols):
+    """
+    Convert COO format to CSR format.
+    This version handles duplicate entries by summing their values.
+
+    Parameters:
+    -----------
+    row_indices : ndarray (int32)
+        Row indices for COO format
+    col_indices : ndarray (int32)
+        Column indices for COO format
+    data : ndarray (float64)
+        Nonzero values in COO format
+    n_rows : int
+        Number of rows in the matrix
+    n_cols : int
+        Number of columns in the matrix
+
+    Returns:
+    --------
+    data_csr : ndarray
+        Nonzero values in CSR format
+    col_indices_csr : ndarray
+        Column indices in CSR format
+    row_ptr : ndarray
+        Row pointers in CSR format
+    """
+    nnz = len(data)
+
+    # Working arrays
+    sorted_row_indices = np.zeros_like(row_indices)
+    sorted_col_indices = np.zeros_like(col_indices)
+    sorted_data = np.zeros_like(data)
+
+    # Count entries per row
+    row_counts = np.zeros(n_rows, dtype=np.int32)
+    for i in range(nnz):
+        row_counts[row_indices[i]] += 1
+
+    # Row pointers via cumulative sum
+    row_ptr = np.zeros(n_rows + 1, dtype=np.int32)
+    for i in range(n_rows):
+        row_ptr[i + 1] = row_ptr[i] + row_counts[i]
+
+    # Reset counts
+    row_counts[:] = 0
+
+    # Distribute elements sorted by row
+    for i in range(nnz):
+        row = row_indices[i]
+        dest = row_ptr[row] + row_counts[row]
+        sorted_row_indices[dest] = row
+        sorted_col_indices[dest] = col_indices[i]
+        sorted_data[dest] = data[i]
+        row_counts[row] += 1
+
+    # Sort by column index within each row (insertion sort)
+    for r in range(n_rows):
+        start = row_ptr[r]
+        end = row_ptr[r + 1]
+        if end - start <= 1:
+            continue
+        for i in range(start + 1, end):
+            key_col = sorted_col_indices[i]
+            key_data = sorted_data[i]
+            k = i - 1
+            while k >= start and sorted_col_indices[k] > key_col:
+                sorted_col_indices[k + 1] = sorted_col_indices[k]
+                sorted_data[k + 1] = sorted_data[k]
+                k -= 1
+            sorted_col_indices[k + 1] = key_col
+            sorted_data[k + 1] = key_data
+
+    # Handle duplicates by summing
+    unique_count = 0
+    i = 0
+    while i < nnz:
+        unique_count += 1
+        curr_row = sorted_row_indices[i]
+        curr_col = sorted_col_indices[i]
+        while i + 1 < nnz and sorted_row_indices[i + 1] == curr_row and sorted_col_indices[i + 1] == curr_col:
+            i += 1
+        i += 1
+
+    # Build final CSR arrays
+    final_data = np.zeros(unique_count, dtype=data.dtype)
+    final_indices = np.zeros(unique_count, dtype=col_indices.dtype)
+    final_indptr = np.zeros(n_rows + 1, dtype=np.int32)
+
+    unique_idx = 0
+    i = 0
+    while i < nnz:
+        curr_row = sorted_row_indices[i]
+        curr_col = sorted_col_indices[i]
+        value_sum = sorted_data[i]
+        i += 1
+        while i < nnz and sorted_row_indices[i] == curr_row and sorted_col_indices[i] == curr_col:
+            value_sum += sorted_data[i]
+            i += 1
+        final_data[unique_idx] = value_sum
+        final_indices[unique_idx] = curr_col
+        final_indptr[curr_row + 1] += 1
+        unique_idx += 1
+
+    # Cumulative sum for row pointers
+    for r in range(1, n_rows + 1):
+        final_indptr[r] += final_indptr[r - 1]
+
+    return final_data, final_indices, final_indptr
+
+
+@njit(nogil=True)
+def sparse_matvec_csr(data, indices, indptr, x):
+    """
+    Sparse CSR matrix-vector product: y = A @ x.
+
+    Parameters:
+    -----------
+    data : ndarray (float64)
+        Nonzero values in CSR format
+    indices : ndarray (int32)
+        Column indices in CSR format
+    indptr : ndarray (int32)
+        Row pointers in CSR format
+    x : ndarray (float64)
+        Input vector
+
+    Returns:
+    --------
+    y : ndarray (float64)
+        Result vector (A @ x)
+    """
+    n_rows = len(indptr) - 1
+    y = np.zeros(n_rows, dtype=np.float64)
+    for i in range(n_rows):
+        s = 0.0
+        for j in range(indptr[i], indptr[i + 1]):
+            s += data[j] * x[indices[j]]
+        y[i] = s
+    return y
 
 
 def validate_csc_matrix(data, indices, indptr, nrows, ncols):

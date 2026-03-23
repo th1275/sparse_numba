@@ -44,7 +44,8 @@ if IS_WINDOWS:
     library_dirs = [
         "vendor/suitesparse/lib",
         "vendor/superlu/lib",
-        "vendor/openblas/lib"
+        "vendor/openblas/lib",
+        "vendor/openblas/bin",  # MinGW can link against DLLs directly
     ]
     # Libraries needed for Windows
     umfpack_libraries = [
@@ -52,7 +53,7 @@ if IS_WINDOWS:
         "suitesparseconfig", "openblas"
     ]
     superlu_libraries = ["superlu", "openblas"]
-    extra_compile_args = ["-O3"]
+    extra_compile_args = ["-O3", "-DSIZEOF_VOID_P=8"]
     extra_link_args = []
 elif IS_LINUX:
     # On Linux, we'll use system libraries if available
@@ -223,19 +224,30 @@ print(f"CI Build: {CI_BUILD}")
 print("===========================\n")
 
 # Define the extension modules
-extensions = [
-    Extension(
-        "sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
-        sources=[
-            "sparse_numba/sparse_umfpack/cy_umfpack_wrapper.pyx",
-            "sparse_numba/sparse_umfpack/umfpack_wrapper.c"
-        ],
-        include_dirs=include_dirs,
-        libraries=umfpack_libraries,
-        library_dirs=library_dirs,
-        extra_compile_args=extra_compile_args,
-        extra_link_args=extra_link_args,
-    ),
+extensions = []
+
+# UMFPACK extension (requires SuiteSparse headers/libs to be installed)
+SKIP_UMFPACK = os.environ.get('SPARSE_NUMBA_SKIP_UMFPACK', '').lower() in ('1', 'true', 'yes')
+if not SKIP_UMFPACK:
+    extensions.append(
+        Extension(
+            "sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
+            sources=[
+                "sparse_numba/sparse_umfpack/cy_umfpack_wrapper.pyx",
+                "sparse_numba/sparse_umfpack/umfpack_wrapper.c"
+            ],
+            include_dirs=include_dirs,
+            libraries=umfpack_libraries,
+            library_dirs=library_dirs,
+            extra_compile_args=extra_compile_args,
+            extra_link_args=extra_link_args,
+        )
+    )
+else:
+    print("Skipping UMFPACK extension (SPARSE_NUMBA_SKIP_UMFPACK is set)")
+
+# SuperLU extension (always built - vendor libraries bundled)
+extensions.append(
     Extension(
         "sparse_numba.sparse_superlu.cy_superlu_wrapper",
         sources=[
@@ -248,7 +260,7 @@ extensions = [
         extra_compile_args=extra_compile_args,
         extra_link_args=extra_link_args,
     )
-]
+)
 
 
 # Customize the build process
@@ -452,7 +464,7 @@ packages=[
 
 setup(
     name="sparse_numba",
-    version="0.1.10",
+    version="0.1.11",
     description="Customized sparse solver with Numba support",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
