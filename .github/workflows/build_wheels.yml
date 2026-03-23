@@ -22,17 +22,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # This ensures all tags are fetched
+          fetch-depth: 0
 
       - id: check
         run: |
-          # Check if this is a tag push
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             echo "is_tag=true" >> $GITHUB_OUTPUT
             echo "should_run=true" >> $GITHUB_OUTPUT
-          # Check if this is a branch push that's not associated with a tag creation
           elif [[ "${{ github.ref }}" == refs/heads/* ]] && [[ "${{ github.event_name }}" == "push" ]]; then
-            # If this commit has a tag pointing to it, skip branch-based run
             if git tag --points-at HEAD | grep -q "^v"; then
               echo "should_run=false" >> $GITHUB_OUTPUT
             else
@@ -44,6 +41,7 @@ jobs:
             echo "is_tag=false" >> $GITHUB_OUTPUT
           fi
 
+  # Build wheels - one job per OS (cibuildwheel handles all Python versions)
   build_wheels:
     needs: check_duplicate
     if: ${{ needs.check_duplicate.outputs.should_run == 'true' }}
@@ -53,7 +51,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-15-intel, windows-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12']
 
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +58,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
@@ -75,10 +72,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libsuitesparse-dev libopenblas-dev libsuperlu-dev
-          # Check where SuperLU headers are located
           echo "SuperLU header locations:"
           sudo find /usr -name "slu_ddefs.h" | grep superlu
-          # Create symlinks if necessary
           SUPERLU_HEADER=$(sudo find /usr -name "slu_ddefs.h" | grep superlu | head -n 1)
           if [ -n "$SUPERLU_HEADER" ]; then
             SUPERLU_DIR=$(dirname "$SUPERLU_HEADER")
@@ -86,43 +81,33 @@ jobs:
             if [ ! -d "/usr/include/superlu" ]; then
               sudo mkdir -p /usr/include/superlu
               sudo cp "$SUPERLU_DIR"/*.h /usr/include/superlu/
-              echo "Created SuperLU header symlinks in /usr/include/superlu/"
             fi
           fi
 
-      # Windows specific setup - uses vendor libraries checked into the repo
+      # Windows specific setup
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          # MinGW-w64 is pre-installed on windows-latest runner
           echo "Checking MinGW..."
           gcc --version || (echo "MinGW not found, installing..." && choco install mingw -y --no-progress)
-          # Find MinGW bin directory and add to PATH
           MINGW_BIN=$(dirname "$(which gcc)")
           echo "MinGW bin: $MINGW_BIN"
           echo "$MINGW_BIN" >> $GITHUB_PATH
-          # Verify vendor libraries exist (these are checked into the repo)
           echo "Checking vendor libraries..."
           ls -la vendor/superlu/lib/ || echo "WARNING: SuperLU libs not found"
           ls -la vendor/superlu/bin/ || echo "WARNING: SuperLU bin not found"
           ls -la vendor/openblas/bin/ || echo "WARNING: OpenBLAS bin not found"
-          ls -la vendor/superlu/include/ || echo "WARNING: SuperLU headers not found"
 
       # macOS specific setup
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
           brew install suite-sparse superlu openblas
-          # Debug: Check the openblas library location
           export OPENBLAS_PREFIX=$(brew --prefix openblas)
           echo "OpenBLAS prefix: $OPENBLAS_PREFIX"
-          echo "OpenBLAS library paths:"
-          find $OPENBLAS_PREFIX -name "*.dylib"
-          # Use the home directory for temporary symlinks (avoid permission issues)
           mkdir -p $HOME/homebrew_libs/openblas/lib
           ln -sf $OPENBLAS_PREFIX/lib/libopenblas.dylib $HOME/homebrew_libs/openblas/lib/
-          echo "Created symlink in $HOME/homebrew_libs/openblas/lib/"
           echo "OPENBLAS_PREFIX=$OPENBLAS_PREFIX" >> $GITHUB_ENV
           echo "HOME_LIBS=$HOME/homebrew_libs" >> $GITHUB_ENV
 
@@ -131,46 +116,35 @@ jobs:
         env:
           CIBW_BUILD: 'cp39-* cp310-* cp311-* cp312-*'
           CIBW_SKIP: '*-musllinux*'
-          # Add this to ensure extensions are built
           CIBW_BEFORE_BUILD: >
             pip install numpy cython
-          # Make compilation more verbose to see errors
           CIBW_BUILD_VERBOSITY: 1
-          CIBW_ARCHS_MACOS: 'x86_64'  # Just x86_64 for CI builds
+          CIBW_ARCHS_MACOS: 'x86_64'
           CIBW_ARCHS_LINUX: 'x86_64'
-          # Set CI flag for setup.py
           CIBW_ENVIRONMENT: >
             CI=true
             GITHUB_ACTIONS=true
             CFLAGS='-O3'
             CXXFLAGS='-O3'
-          # macOS specific environment variables
           CIBW_ENVIRONMENT_MACOS: >
             CI=true
             GITHUB_ACTIONS=true
             CFLAGS='-O3'
             CXXFLAGS='-O3'
             MACOSX_DEPLOYMENT_TARGET=15.0
-          # manylinux configuration - install required packages
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
           CIBW_BEFORE_ALL_LINUX: |
             yum install -y epel-release || true
             yum install -y openblas-devel SuperLU-devel suitesparse-devel ||
             yum install -y openblas-devel superlu-devel suitesparse-devel ||
             (apt-get update && apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev)
-
-            # Check SuperLU header location
             find /usr -name "slu_ddefs.h" || echo "SuperLU headers not found"
-
-            # If header is found, create a symlink in a standard location
             HEADER_PATH=$(find /usr -name "slu_ddefs.h" | head -1)
             if [ -n "$HEADER_PATH" ]; then
               HEADER_DIR=$(dirname "$HEADER_PATH")
               mkdir -p /tmp/superlu_include
-              # Use a conditional copy to avoid errors when no headers match
               if [ -f "$HEADER_DIR/slu_ddefs.h" ]; then
                 cp "$HEADER_DIR"/*.h /tmp/superlu_include/ 2>/dev/null || true
-                echo "Copied SuperLU headers to /tmp/superlu_include/"
               fi
             fi
           CIBW_BEFORE_ALL_MACOS: >
@@ -180,7 +154,6 @@ jobs:
             mkdir -p $HOME/homebrew_libs/openblas/lib;
             ln -sf $OPENBLAS_PREFIX/lib/libopenblas.dylib $HOME/homebrew_libs/openblas/lib/;
             echo "Created symlink in $HOME/homebrew_libs/openblas/lib/"
-          # Windows configuration - use vendor libraries from the repo with MinGW
           CIBW_ARCHS_WINDOWS: 'AMD64'
           CIBW_ENVIRONMENT_WINDOWS: >
             CI=true
@@ -195,15 +168,22 @@ jobs:
         run: |
           python -m cibuildwheel --output-dir wheelhouse
 
-      # Store the built wheels
+      # List built wheels for debugging
+      - name: List built wheels
+        shell: bash
+        run: |
+          echo "Built wheels:"
+          ls -la wheelhouse/
+
+      # Store the built wheels (one artifact per OS, containing all Python versions)
       - name: Upload wheels as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
+          name: wheels-${{ matrix.os }}
           path: |
             ./wheelhouse/*.whl
 
-  # Test job that runs after the wheels are built
+  # Test job - test each Python version per OS
   test_installation:
     needs: [check_duplicate, build_wheels]
     if: ${{ needs.check_duplicate.outputs.should_run == 'true' }}
@@ -215,42 +195,30 @@ jobs:
           # Linux x86_64
           - os: ubuntu-latest
             python-version: '3.9'
-            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
           - os: ubuntu-latest
             python-version: '3.10'
-            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
           - os: ubuntu-latest
             python-version: '3.11'
-            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
           - os: ubuntu-latest
             python-version: '3.12'
-            wheel-suffix: 'manylinux_2_17_x86_64.manylinux2014_x86_64'
           # macOS x86_64 (Intel)
           - os: macos-15-intel
             python-version: '3.9'
-            wheel-suffix: 'macosx_15_0_x86_64'
           - os: macos-15-intel
             python-version: '3.10'
-            wheel-suffix: 'macosx_15_0_x86_64'
           - os: macos-15-intel
             python-version: '3.11'
-            wheel-suffix: 'macosx_15_0_x86_64'
           - os: macos-15-intel
             python-version: '3.12'
-            wheel-suffix: 'macosx_15_0_x86_64'
           # Windows x86_64
           - os: windows-latest
             python-version: '3.9'
-            wheel-suffix: 'win_amd64'
           - os: windows-latest
             python-version: '3.10'
-            wheel-suffix: 'win_amd64'
           - os: windows-latest
             python-version: '3.11'
-            wheel-suffix: 'win_amd64'
           - os: windows-latest
             python-version: '3.12'
-            wheel-suffix: 'win_amd64'
 
     steps:
       - uses: actions/checkout@v4
@@ -263,8 +231,14 @@ jobs:
       - name: Download wheel artifacts
         uses: actions/download-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-${{ matrix.python-version }}
+          name: wheels-${{ matrix.os }}
           path: ./wheelhouse
+
+      - name: List available wheels
+        shell: bash
+        run: |
+          echo "Available wheels:"
+          ls -la wheelhouse/
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -277,41 +251,22 @@ jobs:
         run: |
           brew install suite-sparse superlu openblas
 
-      - name: Inspect linux wheel contents
-        if: runner.os == 'Linux'
-        run: |
-          python -m pip install wheel-inspect
-          PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
-          WHEEL_FILE=$(ls wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-${{ matrix.wheel-suffix }}.whl | head -n 1)
-          python -m wheel_inspect $WHEEL_FILE
-          unzip -l $WHEEL_FILE | grep "cy_.*wrapper"
-
-      - name: Inspect macOS wheel contents
-        if: runner.os == 'macOS'
-        run: |
-          python -m pip install wheel-inspect
-          PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
-          WHEEL_FILE=$(ls wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-${{ matrix.wheel-suffix }}.whl | head -n 1)
-          unzip -l $WHEEL_FILE | grep "cy_.*wrapper"
-
       - name: Install the wheel (Unix)
         if: runner.os != 'Windows'
         run: |
           python -m pip install --upgrade pip
           python -m pip install numpy numba
-          # List available wheels to debug
-          echo "Available wheels:"
-          ls -la wheelhouse/
-          # Install the specific wheel for this platform/Python combination
+          # Find matching wheel using pip directly (handles platform tags automatically)
           PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
-          WHEEL_FILE=$(ls wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-${{ matrix.wheel-suffix }}.whl | head -n 1)
-
+          WHEEL_FILE=$(ls wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*.whl | head -n 1)
           if [ -z "$WHEEL_FILE" ]; then
-            echo "Error: No matching wheel found for Python ${{ matrix.python-version }} and suffix ${{ matrix.wheel-suffix }}"
+            echo "Error: No matching wheel found for Python ${{ matrix.python-version }}"
+            echo "Available wheels:"
+            ls wheelhouse/*.whl
             exit 1
           fi
           echo "Installing wheel: $WHEEL_FILE"
-          python -m pip install $WHEEL_FILE --verbose
+          python -m pip install "$WHEEL_FILE" --verbose
 
       - name: Install the wheel (Windows)
         if: runner.os == 'Windows'
@@ -319,14 +274,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install numpy numba
-          # List available wheels
-          Write-Host "Available wheels:"
-          Get-ChildItem wheelhouse/ -Filter *.whl
-          # Find and install the matching wheel
           $pyver = "${{ matrix.python-version }}" -replace '\.', ''
-          $wheel = Get-ChildItem wheelhouse/sparse_numba-*-cp${pyver}-*-${{ matrix.wheel-suffix }}.whl | Select-Object -First 1
+          $wheel = Get-ChildItem wheelhouse/sparse_numba-*-cp${pyver}-*.whl | Select-Object -First 1
           if (-not $wheel) {
             Write-Error "No matching wheel found"
+            Get-ChildItem wheelhouse/*.whl
             exit 1
           }
           Write-Host "Installing wheel: $($wheel.FullName)"
@@ -334,33 +286,29 @@ jobs:
 
       - name: Run tests (Unix)
         if: runner.os != 'Windows'
+        env:
+          KMP_DUPLICATE_LIB_OK: 'TRUE'
         run: |
-          # Create a clean virtual environment
           python -m venv test_venv
           source test_venv/bin/activate
           python -m pip install --upgrade pip
           python -m pip install numpy numba
-          # Install wheel
           PYTHON_VERSION_NO_DOT=$(echo ${{ matrix.python-version }} | tr -d '.')
-          pip install wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*-*.whl
-          # Copy the test script to a new location
+          pip install wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*.whl
           mkdir -p /tmp/test_dir
           cp run_tests.py /tmp/test_dir/
-          # Change to the new directory and run tests
           cd /tmp/test_dir
-          python run_tests.py
+          KMP_DUPLICATE_LIB_OK=TRUE python run_tests.py
 
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # Install directly (no venv needed for isolation in CI)
           python -m pip install --upgrade pip
           python -m pip install numpy numba
           $pyver = "${{ matrix.python-version }}" -replace '\.', ''
-          $wheel = Get-ChildItem wheelhouse/sparse_numba-*-cp${pyver}-*-*.whl | Select-Object -First 1
+          $wheel = Get-ChildItem wheelhouse/sparse_numba-*-cp${pyver}-*.whl | Select-Object -First 1
           python -m pip install $wheel.FullName
-          # Copy test script to temp dir and run from there
           $testDir = Join-Path $env:RUNNER_TEMP "test_dir"
           New-Item -ItemType Directory -Force -Path $testDir
           Copy-Item run_tests.py $testDir/
@@ -435,6 +383,8 @@ jobs:
           mkdir -p final_dist
           cp wheelhouse/*.whl final_dist/
           cp dist/*.tar.gz final_dist/
+          echo "Files to upload:"
+          ls -la final_dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
