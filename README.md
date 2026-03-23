@@ -23,11 +23,16 @@ Due to licensing, UMFPACK DLLs are not bundled. To use the UMFPACK solver, insta
 
 ### Platform Compatibility
 
-| Platform | Python Versions | Status |
-|----------|----------------|--------|
-| Windows  | 3.8 - 3.12     | Tested |
-| Linux (Ubuntu, Debian, CentOS, Fedora, etc.) | 3.8 - 3.12 | Supported |
-| macOS (>= 13.0, Intel x86_64) | 3.8 - 3.12 | Supported |
+| Platform | Python Versions | Pre-built Wheels | Status |
+|----------|----------------|-----------------|--------|
+| Windows (x86_64) | 3.9 - 3.12 | Yes | Tested |
+| Linux (x86_64) | 3.9 - 3.12 | Yes | Tested |
+| macOS (ARM / Apple Silicon) | 3.9 - 3.12 | Yes | Tested |
+| macOS (Intel x86_64) | 3.9 - 3.12 | Build from source | Supported |
+
+> **Note:** Starting from v0.1.11, macOS pre-built wheels target Apple Silicon (ARM64).
+> Intel Mac users can install from source: `pip install sparse-numba --no-binary=sparse-numba`.
+> Python 3.8 support has been dropped to align with NumPy and Numba compatibility.
 
 ### Building from Source (Windows)
 
