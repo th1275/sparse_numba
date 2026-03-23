@@ -54,7 +54,7 @@ if IS_WINDOWS:
     ]
     superlu_libraries = ["superlu", "openblas"]
     # Use MS_WIN64 to help pyconfig.h detect 64-bit correctly with MinGW.
-    # Don't pass -DSIZEOF_VOID_P directly — it conflicts with pyconfig.h's own definition.
+    # Don't pass -DSIZEOF_VOID_P directly - it conflicts with pyconfig.h's own definition.
     import struct
     extra_compile_args = ["-O3"]
     if struct.calcsize("P") == 8:
@@ -330,9 +330,9 @@ class CustomBuildExt(build_ext):
         for ext in self.extensions:
             ext_path = self.get_ext_fullpath(ext.name)
             if os.path.exists(ext_path):
-                print(f"✅ {ext.name} successfully built at {ext_path}")
+                print(f"[OK] {ext.name} successfully built at {ext_path}")
             else:
-                print(f"❌ {ext.name} FAILED TO BUILD (expected at {ext_path})")
+                print(f"[FAIL] {ext.name} FAILED TO BUILD (expected at {ext_path})")
         print("=" * 80 + "\n")
 
         # Get extension paths for all platforms
