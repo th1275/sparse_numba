@@ -394,7 +394,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          python -m pip install pytest "setuptools>=70.1"
+          python -m pip install pytest scipy "setuptools>=70.1"
           $pyver = "${{ matrix.python-version }}" -replace '\.', ''
           $wheel = Get-ChildItem wheelhouse/sparse_numba-*-cp${pyver}-*.whl | Select-Object -First 1
           python -m pip install --force-reinstall --no-deps $wheel.FullName
