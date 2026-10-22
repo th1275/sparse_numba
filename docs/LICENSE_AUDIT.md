@@ -278,7 +278,7 @@ fab3dd6bdab226f1... and c83230b770f17ef1..., equal to third_party's), its
 text files and RECORD; its three extensions and every vendored file are the
 same bytes. The release's own wheel listing is re-read before the tag.
 
-LINUX (2026-10-22, SN-6e): read on CI's cp311 Linux wheel of PR #1's run
+LINUX (2026-10-22, 0.2.0): read on CI's cp311 Linux wheel of PR #1's run
 at 4c9d9ad (sparse_numba-0.2.0-cp311-cp311-manylinux_2_27_x86_64.
 manylinux_2_28_x86_64.whl, sha256 45523b486266c969...). The wheels are
 built in the manylinux_2_28 image (AlmaLinux 8) against its packages
@@ -340,4 +340,4 @@ L5  The Linux wheels' libquadmath (RL5) is read under L1, the same
     repair changes only its file name and its ELF soname / needed / rpath
     entries), dynamically loaded and replaceable, its LGPL text in the
     wheel (third_party_licenses/linux/libquadmath/). The Linux licence
-    texts ship from 0.2.0 (SN-6e); 0.1.11's Linux wheels carried none.
+    texts ship from 0.2.0; 0.1.11's Linux wheels carried none.
