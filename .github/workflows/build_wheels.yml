@@ -224,15 +224,29 @@ jobs:
                   collect
                 fi
                 if [ "$key" = atlas ] && [ -z "$(ls "$LICDIR/$key" | grep -v -x SOURCE.txt)" ]; then
-                  # ATLAS's RPMs carry no licence file; its BSD licence is the
-                  # comment block heading its headers (atlas-devel): copied
-                  # from the first header that carries it, the file named
-                  dnf install -y atlas-devel >/dev/null 2>&1 || true
-                  hdr=$(grep -rl "Automatically Tuned Linear Algebra Software" /usr/include 2>/dev/null | head -n 1)
-                  if [ -n "$hdr" ]; then
-                    { echo "The ATLAS licence, as it heads $hdr (package $(rpm -qf "$hdr")):"; echo;
-                      awk '/Automatically Tuned Linear Algebra Software/{p=1} p{print} /POSSIBILITY OF SUCH DAMAGE/{if(p) exit}' "$hdr"; } > "$LICDIR/$key/LICENSE.from-header.txt"
-                    grep -q "POSSIBILITY OF SUCH DAMAGE" "$LICDIR/$key/LICENSE.from-header.txt" || rm -f "$LICDIR/$key/LICENSE.from-header.txt"
+                  # ATLAS's EL8 RPMs (atlas / atlas-devel 3.10.3, licence
+                  # field BSD) carry no licence text and their headers no
+                  # licence block (PR #1 run at 36a1ad4's log). The BSD
+                  # licence heads ATLAS's own source files: taken from the
+                  # 3.10.3 release tarball (the bundled version), the source
+                  # file named
+                  dnf install -y bzip2 >/dev/null 2>&1 || true
+                  if curl -fsSL --retry 3 -o /tmp/atlas.tar.bz2 \
+                       https://downloads.sourceforge.net/project/math-atlas/Stable/3.10.3/atlas3.10.3.tar.bz2 &&
+                     mkdir -p /tmp/atlas_src && tar -xjf /tmp/atlas.tar.bz2 -C /tmp/atlas_src; then
+                    src=$(grep -rl "POSSIBILITY OF SUCH DAMAGE" /tmp/atlas_src/ATLAS/include 2>/dev/null | head -n 1)
+                    [ -n "$src" ] || src=$(grep -rl "POSSIBILITY OF SUCH DAMAGE" /tmp/atlas_src/ATLAS 2>/dev/null | head -n 1)
+                    if [ -n "$src" ]; then
+                      { echo "The ATLAS licence, as it heads ${src#/tmp/atlas_src/} in the ATLAS 3.10.3 release"
+                        echo "(math-atlas.sourceforge.net, atlas3.10.3.tar.bz2, sha256 $(sha256sum /tmp/atlas.tar.bz2 | cut -d' ' -f1)):"; echo
+                        awk '/Copyright/{if(!p)p=1} p{print} /POSSIBILITY OF SUCH DAMAGE/{if(p) exit}' "$src"; } > "$LICDIR/$key/LICENSE.from-source.txt"
+                      grep -q "POSSIBILITY OF SUCH DAMAGE" "$LICDIR/$key/LICENSE.from-source.txt" || rm -f "$LICDIR/$key/LICENSE.from-source.txt"
+                      echo "ATLAS licence text taken from $src:"; cat "$LICDIR/$key/LICENSE.from-source.txt" 2>/dev/null || echo "(block incomplete)"
+                    else
+                      echo "no licence block found in the ATLAS 3.10.3 sources"
+                    fi
+                  else
+                    echo "the ATLAS 3.10.3 tarball could not be fetched or unpacked"
                   fi
                 fi
                 if [ -z "$(ls "$LICDIR/$key" | grep -v -x SOURCE.txt)" ]; then
