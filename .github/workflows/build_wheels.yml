@@ -67,11 +67,16 @@ jobs:
           python -m pip install cibuildwheel
 
       # Linux specific setup
+      # The host's SuperLU headers only (cibuildwheel builds in the
+      # manylinux_2_28 container, whose before-all installs its own); no
+      # SuiteSparse on the host (UMFPACK is interface-only, and the full
+      # SuiteSparse set stalled the job on the apt mirror, PR #1 runs 58-59)
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsuitesparse-dev libopenblas-dev libsuperlu-dev
+          sudo apt-get install -y --no-install-recommends libopenblas-dev libsuperlu-dev
           echo "SuperLU header locations:"
           sudo find /usr -name "slu_ddefs.h" | grep superlu
           SUPERLU_HEADER=$(sudo find /usr -name "slu_ddefs.h" | grep superlu | head -n 1)
@@ -303,11 +308,15 @@ jobs:
           echo "Available wheels:"
           ls -la wheelhouse/
 
+      # The wheel's runtime libraries only (system SuperLU and OpenBLAS); no
+      # SuiteSparse: UMFPACK is the user's library, absent here as on the
+      # Windows runner (its cells skip by name)
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsuitesparse-dev libopenblas-dev libsuperlu-dev
+          sudo apt-get install -y --no-install-recommends libopenblas-dev libsuperlu-dev
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
