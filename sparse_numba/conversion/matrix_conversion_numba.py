@@ -17,7 +17,7 @@ import numpy as np
 from numba import njit, types
 
 
-@njit
+@njit(cache=True)
 def convert_coo_to_csc(row_indices, col_indices, data, n_rows, n_cols):
     """
     Convert COO format to CSC format required by UMFPACK.
@@ -155,7 +155,7 @@ def convert_coo_to_csc(row_indices, col_indices, data, n_rows, n_cols):
     return final_data, final_indices, final_indptr
 
 
-@njit
+@njit(cache=True)
 def convert_csr_to_csc(csr_data, csr_indices, csr_indptr):
     """
     Convert CSR format to CSC format while ensuring the indices are sorted.
@@ -278,7 +278,7 @@ def convert_csr_to_csc(csr_data, csr_indices, csr_indptr):
     return csc_data, csc_indices, csc_indptr
 
 
-@njit
+@njit(cache=True)
 def validate_sparse_matrix(data, indices, indptr=None, shape=None):
     """
     Validate sparse matrix inputs and return dimensions.
@@ -322,7 +322,7 @@ def validate_sparse_matrix(data, indices, indptr=None, shape=None):
     return n_rows, n_cols
 
 
-@njit
+@njit(cache=True)
 def check_matrix_properties(csc_data, csc_indices, csc_indptr, n_rows):
     """
     Check matrix properties for potential issues with ill-conditioning.
@@ -420,7 +420,7 @@ def check_matrix_properties(csc_data, csc_indices, csc_indptr, n_rows):
     return is_singular, condition_est, diag_ratio
 
 
-@njit
+@njit(cache=True)
 def convert_coo_to_csr(row_indices, col_indices, data, n_rows, n_cols):
     """
     Convert COO format to CSR format.
@@ -532,7 +532,7 @@ def convert_coo_to_csr(row_indices, col_indices, data, n_rows, n_cols):
     return final_data, final_indices, final_indptr
 
 
-@njit(nogil=True)
+@njit(nogil=True, cache=True)
 def sparse_matvec_csr(data, indices, indptr, x):
     """
     Sparse CSR matrix-vector product: y = A @ x.

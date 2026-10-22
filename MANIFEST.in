@@ -6,9 +6,23 @@ include sparse_numba/sparse_umfpack/*.py
 include sparse_numba/conversion/*.py
 include sparse_numba/sparse_superlu/*.py
 
-# Windows-specific
+# The C interface headers the shims compile against (the shared codes and
+# registry, each backend's wrapper and Cython api header), the Eigen 3.4.0
+# tree compiled into the Eigen extension, and the SuperLU headers and link
+# libraries the Windows build reads: an sdist without them fails to build.
+# (include_package_data also puts the shim headers into the wheel.)
+recursive-include sparse_numba *.h
+graft third_party/eigen-3.4.0
+recursive-include vendor/superlu/include *.h
+include vendor/superlu/lib/*.a
+
+# Windows-specific: the SuperLU / OpenBLAS link chain (the DLLs the
+# extensions import, and only those; libsuperlu_fortran-7 out at 0.2.0) and
+# the licence file of each DLL beside it
 include vendor/openblas/bin/*.dll
+include vendor/openblas/bin/LICENSE.*
 include vendor/superlu/bin/*.dll
+include vendor/superlu/bin/LICENSE.*
 
 # Linux-specific
 include vendor/openblas/lib/*.so
@@ -29,10 +43,11 @@ include sparse_numba/sparse_superlu/*.dylib
 
 # Exclude source files from wheel package (keep them in sdist)
 exclude sparse_numba/sparse_umfpack/*.c
-exclude sparse_numba/sparse_umfpack/*.h
 exclude sparse_numba/sparse_umfpack/*.pyx
 exclude vendor/suitesparse/bin/*.dll
 
 exclude sparse_numba/sparse_superlu/*.c
-exclude sparse_numba/sparse_superlu/*.h
 exclude sparse_numba/sparse_superlu/*.pyx
+
+# No cache files in any wheel or sdist
+global-exclude __pycache__ *.py[cod] *.nbi *.nbc

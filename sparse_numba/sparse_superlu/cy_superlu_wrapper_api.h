@@ -15,6 +15,14 @@ static int (*__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy
 #define cy_solve_with_factors __pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_solve_with_factors
 static int (*__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_free_sparse_factors)(int64_t) = 0;
 #define cy_free_sparse_factors __pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_free_sparse_factors
+static int (*__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_factorize_ordered)(double *, int *, int *, int, int, int, int64_t *) = 0;
+#define cy_factorize_ordered __pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_factorize_ordered
+static int (*__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_refactorize)(int64_t, double *, int) = 0;
+#define cy_refactorize __pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_refactorize
+static int (*__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_solve_into)(int64_t, double *, double *, int, int) = 0;
+#define cy_solve_into __pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_solve_into
+static int (*__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_handle_info)(int64_t, int64_t *, double *) = 0;
+#define cy_handle_info __pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_handle_info
 static int __Pyx_ImportFunction_3_2_4(PyObject *module, const char *funcname, void (**f)(void), const char *sig);
 
 #ifndef __PYX_HAVE_RT_ImportFromPxd_3_2_4
@@ -80,6 +88,10 @@ static int import_sparse_numba__sparse_superlu__cy_superlu_wrapper(void) {
   if (__Pyx_ImportFunction_3_2_4(module, "cy_factorize_sparse_system", (void (**)(void))&__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_factorize_sparse_system, "int (double *, int *, int *, int, int, int, int64_t *)") < 0) goto bad;
   if (__Pyx_ImportFunction_3_2_4(module, "cy_solve_with_factors", (void (**)(void))&__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_solve_with_factors, "int (int64_t, double *, double *, int)") < 0) goto bad;
   if (__Pyx_ImportFunction_3_2_4(module, "cy_free_sparse_factors", (void (**)(void))&__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_free_sparse_factors, "int (int64_t)") < 0) goto bad;
+  if (__Pyx_ImportFunction_3_2_4(module, "cy_factorize_ordered", (void (**)(void))&__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_factorize_ordered, "int (double *, int *, int *, int, int, int, int64_t *)") < 0) goto bad;
+  if (__Pyx_ImportFunction_3_2_4(module, "cy_refactorize", (void (**)(void))&__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_refactorize, "int (int64_t, double *, int)") < 0) goto bad;
+  if (__Pyx_ImportFunction_3_2_4(module, "cy_solve_into", (void (**)(void))&__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_solve_into, "int (int64_t, double *, double *, int, int)") < 0) goto bad;
+  if (__Pyx_ImportFunction_3_2_4(module, "cy_handle_info", (void (**)(void))&__pyx_api_f_12sparse_numba_14sparse_superlu_18cy_superlu_wrapper_cy_handle_info, "int (int64_t, int64_t *, double *)") < 0) goto bad;
   Py_DECREF(module); module = 0;
   return 0;
   bad:

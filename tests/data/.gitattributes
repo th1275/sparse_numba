@@ -1,0 +1,3 @@
+# every file under tests/data/ is kept byte for byte (no EOL conversion):
+# the vehicles' copies are read against SHA256SUMS
+* -text

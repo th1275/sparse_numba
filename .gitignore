@@ -11,10 +11,15 @@
 /vendor/superlu/bin/*
 !/vendor/superlu/bin/.placeholder
 !/vendor/superlu/bin/*.dll
+!/vendor/superlu/bin/LICENSE.*
 
 /build/
 /.venv/
+/.venv311/
 /dist/
+
+# the DLLs build_ext --inplace copies into the package (setup.py run())
+/sparse_numba/vendor/
 
 /2025-03-31_12-07-12_Claude Chat_Distributing UMFPACK-based Python Wrapper with Wheels....md
 /project_structure.txt

@@ -67,11 +67,16 @@ jobs:
           python -m pip install cibuildwheel
 
       # Linux specific setup
+      # The host's SuperLU headers only (cibuildwheel builds in the
+      # manylinux_2_28 container, whose before-all installs its own); no
+      # SuiteSparse on the host (UMFPACK is interface-only, and the full
+      # SuiteSparse set stalled the job on the apt mirror, PR #1 runs 58-59)
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsuitesparse-dev libopenblas-dev libsuperlu-dev
+          sudo apt-get install -y --no-install-recommends libopenblas-dev libsuperlu-dev
           echo "SuperLU header locations:"
           sudo find /usr -name "slu_ddefs.h" | grep superlu
           SUPERLU_HEADER=$(sudo find /usr -name "slu_ddefs.h" | grep superlu | head -n 1)
@@ -99,6 +104,32 @@ jobs:
           ls -la vendor/superlu/bin/ || echo "WARNING: SuperLU bin not found"
           ls -la vendor/openblas/bin/ || echo "WARNING: OpenBLAS bin not found"
 
+      # The UMFPACK extension is interface-only: it compiles against
+      # umfpack.h and links no SuiteSparse library (the user's library is
+      # loaded at runtime). Only the HEADERS are taken here: MSYS2's
+      # SuiteSparse package is downloaded (pacman -Sw installs nothing) and
+      # its include/suitesparse/*.h alone extracted into
+      # vendor/suitesparse/include; no SuiteSparse DLL reaches the build or
+      # the wheel.
+      - name: Install the SuiteSparse headers only (Windows)
+        if: runner.os == 'Windows'
+        shell: C:\msys64\usr\bin\bash.exe --noprofile --norc -eo pipefail {0}
+        run: |
+          export PATH=/usr/bin:$PATH
+          pacman -Sy --noconfirm
+          pacman -Sw --noconfirm mingw-w64-x86_64-suitesparse
+          pkg=$(ls /var/cache/pacman/pkg/mingw-w64-x86_64-suitesparse-[0-9]*.pkg.tar.zst | sort -V | tail -n 1)
+          echo "headers from: $pkg"
+          mkdir -p ss_pkg vendor/suitesparse/include
+          tar --zstd -xf "$pkg" -C ss_pkg mingw64/include/suitesparse
+          cp ss_pkg/mingw64/include/suitesparse/*.h vendor/suitesparse/include/
+          rm -rf ss_pkg
+          ls vendor/suitesparse/include
+          test -f vendor/suitesparse/include/umfpack.h
+          if ls vendor/suitesparse/bin/*.dll >/dev/null 2>&1; then
+            echo "a SuiteSparse DLL is in the checkout"; exit 1
+          fi
+
       # macOS specific setup
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
@@ -114,7 +145,7 @@ jobs:
       # Build wheels using cibuildwheel
       - name: Build wheels
         env:
-          CIBW_BUILD: 'cp39-* cp310-* cp311-* cp312-*'
+          CIBW_BUILD: 'cp310-* cp311-* cp312-* cp313-*'
           CIBW_SKIP: '*-musllinux*'
           CIBW_BEFORE_BUILD: >
             pip install numpy cython
@@ -132,12 +163,21 @@ jobs:
             CFLAGS='-O3'
             CXXFLAGS='-O3'
             MACOSX_DEPLOYMENT_TARGET=14.0
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
+          # manylinux_2_28 (AlmaLinux 8, glibc >= 2.28): current numpy ships
+          # no manylinux2014 wheels, so CIBW_BEFORE_BUILD's pip install
+          # would build numpy from source there (and fails)
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          # suitesparse-devel for umfpack.h only: the UMFPACK extension links
+          # no SuiteSparse library, so auditwheel has none to bundle (the
+          # check after the build asserts it). AlmaLinux 8: openblas-devel
+          # and suitesparse-devel are in powertools, SuperLU-devel in EPEL
           CIBW_BEFORE_ALL_LINUX: |
-            yum install -y epel-release || true
-            yum install -y openblas-devel SuperLU-devel suitesparse-devel ||
-            yum install -y openblas-devel superlu-devel suitesparse-devel ||
-            (apt-get update && apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev)
+            set -e
+            dnf install -y dnf-plugins-core epel-release
+            dnf config-manager --set-enabled powertools || dnf config-manager --set-enabled crb
+            dnf install -y openblas-devel suitesparse-devel
+            dnf install -y SuperLU-devel || dnf install -y superlu-devel
+            find /usr/include -name umfpack.h || echo "umfpack.h not found"
             find /usr -name "slu_ddefs.h" || echo "SuperLU headers not found"
             HEADER_PATH=$(find /usr -name "slu_ddefs.h" | head -1)
             if [ -n "$HEADER_PATH" ]; then
@@ -147,6 +187,77 @@ jobs:
                 cp "$HEADER_DIR"/*.h /tmp/superlu_include/ 2>/dev/null || true
               fi
             fi
+            # The licence texts of the libraries auditwheel bundles into
+            # sparse_numba.libs (SuperLU 5.x, OpenBLAS, ATLAS, libgfortran,
+            # libquadmath): for each, the package owning the library and the
+            # installed packages built from the same source package (gcc's
+            # licence files are libgcc's; openblas's LICENSE is the base
+            # package's), their rpm -qL files and rpm -qd's COPYING / LICENSE
+            # files, copied into sparse_numba/third_party_licenses/linux/<name>/
+            # with SOURCE.txt naming the packages (setup.py's Linux
+            # package_data puts them in the wheel; tests/test_sn6_wheel.py
+            # maps every bundled library to its folder). Missing texts are
+            # reported here and fail that test
+            LICDIR={project}/sparse_numba/third_party_licenses/linux
+            printf '%s\n' 'superlu libsuperlu.so.*' 'openblas libopenblas*.so*' \
+              'atlas libsatlas.so.*' 'atlas libtatlas.so.*' \
+              'libgfortran libgfortran.so.*' 'libquadmath libquadmath.so.*' |
+            while read -r key pattern; do
+              mkdir -p "$LICDIR/$key"
+              # (ATLAS's libraries sit in /usr/lib64/atlas/ on EL8)
+              for lib in $(ls /usr/lib64/$pattern /usr/lib64/atlas/$pattern 2>/dev/null); do
+                pkg=$(rpm -qf "$lib" 2>/dev/null) || continue
+                srpm=$(rpm -q --qf '%{SOURCERPM}' "$pkg")
+                pkgs="$pkg $(rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH} %{SOURCERPM}\n' | while read -r p s; do if [ "$s" = "$srpm" ]; then echo "$p"; fi; done)"
+                collect() {
+                  for p in $pkgs; do
+                    for f in $(rpm -qL "$p" 2>/dev/null) $(rpm -qd "$p" 2>/dev/null | grep -i -E '/(copying|licen[cs]e)[^/]*$'); do
+                      if [ -f "$f" ]; then cp -n "$f" "$LICDIR/$key/"; fi
+                    done
+                  done
+                }
+                collect
+                if [ -z "$(ls "$LICDIR/$key" | grep -v -x SOURCE.txt)" ]; then
+                  # the image installs without docs: every package of the
+                  # source package again, with its doc and licence files
+                  dnf reinstall -y --setopt=tsflags= $pkgs >/dev/null 2>&1 || true
+                  collect
+                fi
+                if [ "$key" = atlas ] && [ -z "$(ls "$LICDIR/$key" | grep -v -x SOURCE.txt)" ]; then
+                  # ATLAS's EL8 RPMs (atlas / atlas-devel 3.10.3, licence
+                  # field BSD) carry no licence text and their headers no
+                  # licence block (PR #1 run at 36a1ad4's log). The BSD
+                  # licence heads ATLAS's own source files: taken from the
+                  # 3.10.3 release tarball (the bundled version), the source
+                  # file named
+                  dnf install -y bzip2 >/dev/null 2>&1 || true
+                  if curl -fsSL --retry 3 -o /tmp/atlas.tar.bz2 \
+                       https://downloads.sourceforge.net/project/math-atlas/Stable/3.10.3/atlas3.10.3.tar.bz2 &&
+                     mkdir -p /tmp/atlas_src && tar -xjf /tmp/atlas.tar.bz2 -C /tmp/atlas_src; then
+                    src=$(grep -rl "POSSIBILITY OF SUCH DAMAGE" /tmp/atlas_src/ATLAS/include 2>/dev/null | head -n 1)
+                    [ -n "$src" ] || src=$(grep -rl "POSSIBILITY OF SUCH DAMAGE" /tmp/atlas_src/ATLAS 2>/dev/null | head -n 1)
+                    if [ -n "$src" ]; then
+                      { echo "The ATLAS licence, as it heads ${src#/tmp/atlas_src/} in the ATLAS 3.10.3 release"
+                        echo "(math-atlas.sourceforge.net, atlas3.10.3.tar.bz2, sha256 $(sha256sum /tmp/atlas.tar.bz2 | cut -d' ' -f1)):"; echo
+                        awk '/Copyright/{if(!p)p=1} p{print} /POSSIBILITY OF SUCH DAMAGE/{if(p) exit}' "$src"; } > "$LICDIR/$key/LICENSE.from-source.txt"
+                      grep -q "POSSIBILITY OF SUCH DAMAGE" "$LICDIR/$key/LICENSE.from-source.txt" || rm -f "$LICDIR/$key/LICENSE.from-source.txt"
+                      echo "ATLAS licence text taken from $src:"; cat "$LICDIR/$key/LICENSE.from-source.txt" 2>/dev/null || echo "(block incomplete)"
+                    else
+                      echo "no licence block found in the ATLAS 3.10.3 sources"
+                    fi
+                  else
+                    echo "the ATLAS 3.10.3 tarball could not be fetched or unpacked"
+                  fi
+                fi
+                if [ -z "$(ls "$LICDIR/$key" | grep -v -x SOURCE.txt)" ]; then
+                  echo "no licence file found for $key; what the packages carry:"
+                  for p in $pkgs; do echo "  $p: $(rpm -q --qf '%{LICENSE}' "$p")"; rpm -qL "$p"; rpm -qd "$p" | head -20; done
+                fi
+                echo "$lib: $pkg (source $srpm; licence $(rpm -q --qf '%{LICENSE}' "$pkg")); licence files from: $pkgs" >> "$LICDIR/$key/SOURCE.txt"
+              done
+              echo "licence texts for $key:"; ls -l "$LICDIR/$key"
+              ls "$LICDIR/$key" | grep -v -x SOURCE.txt >/dev/null || echo "WARNING: no licence text for $key"
+            done
           CIBW_BEFORE_ALL_MACOS: >
             brew install suite-sparse superlu openblas;
             OPENBLAS_PREFIX=$(brew --prefix openblas);
@@ -154,15 +265,22 @@ jobs:
             mkdir -p $HOME/homebrew_libs/openblas/lib;
             ln -sf $OPENBLAS_PREFIX/lib/libopenblas.dylib $HOME/homebrew_libs/openblas/lib/;
             echo "Created symlink in $HOME/homebrew_libs/openblas/lib/"
-          # Skip delocate on macOS — we rely on system-installed libs (brew)
-          # just like Linux relies on system libs without bundling
+          # Skip delocate on macOS -- the wheels load Homebrew's superlu /
+          # openblas at run time, nothing is bundled (the Linux wheels, by
+          # contrast, bundle theirs through auditwheel's repair)
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
             cp {wheel} {dest_dir}/
+          # Skip delvewheel on Windows: the wheel already vendors the seven
+          # DLLs its extensions import (sparse_numba/vendor/*/bin, with their
+          # licences; found at import through os.add_dll_directory). A
+          # repair with a search path would copy them a second time into
+          # sparse_numba.libs; tests/test_sn6_wheel.py checks the set
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
+            python -c "import shutil, sys; shutil.copy(sys.argv[1], sys.argv[2])" {wheel} {dest_dir}
           CIBW_ARCHS_WINDOWS: 'AMD64'
           CIBW_ENVIRONMENT_WINDOWS: >
             CI=true
             GITHUB_ACTIONS=true
-            SPARSE_NUMBA_SKIP_UMFPACK=1
             DISTUTILS_USE_SDK=0
           CIBW_BEFORE_BUILD_WINDOWS: >
             pip install numpy cython setuptools &&
@@ -178,6 +296,24 @@ jobs:
         run: |
           echo "Built wheels:"
           ls -la wheelhouse/
+
+      # No wheel carries a SuiteSparse library (GPL / LGPL; UMFPACK is the
+      # user's): a file named after one fails the job
+      - name: Check the wheels carry no SuiteSparse library
+        shell: bash
+        run: |
+          python - <<'PY'
+          import glob, re, sys, zipfile
+          pattern = re.compile(r"(lib)?(umfpack|cholmod|amd|camd|colamd|ccolamd|"
+                               r"suitesparseconfig|klu|btf|spqr|cxsparse|ldl)[.-]")
+          wheels = sorted(glob.glob("wheelhouse/*.whl"))
+          bad = [(whl, name) for whl in wheels for name in zipfile.ZipFile(whl).namelist()
+                 if pattern.match(name.rsplit("/", 1)[-1].lower())]
+          for whl, name in bad:
+              print("%s: %s" % (whl, name))
+          print("%d wheel(s) read, %d SuiteSparse file(s)" % (len(wheels), len(bad)))
+          sys.exit(1 if bad or not wheels else 0)
+          PY
 
       # Store the built wheels (one artifact per OS, containing all Python versions)
       - name: Upload wheels as artifacts
@@ -198,31 +334,31 @@ jobs:
         include:
           # Linux x86_64
           - os: ubuntu-latest
-            python-version: '3.9'
-          - os: ubuntu-latest
             python-version: '3.10'
           - os: ubuntu-latest
             python-version: '3.11'
           - os: ubuntu-latest
             python-version: '3.12'
+          - os: ubuntu-latest
+            python-version: '3.13'
           # macOS ARM64 (Apple Silicon)
           - os: macos-latest
-            python-version: '3.9'
-          - os: macos-latest
             python-version: '3.10'
           - os: macos-latest
             python-version: '3.11'
           - os: macos-latest
             python-version: '3.12'
+          - os: macos-latest
+            python-version: '3.13'
           # Windows x86_64
           - os: windows-latest
-            python-version: '3.9'
-          - os: windows-latest
             python-version: '3.10'
           - os: windows-latest
             python-version: '3.11'
           - os: windows-latest
             python-version: '3.12'
+          - os: windows-latest
+            python-version: '3.13'
 
     steps:
       - uses: actions/checkout@v4
@@ -244,11 +380,16 @@ jobs:
           echo "Available wheels:"
           ls -la wheelhouse/
 
+      # The system SuperLU and OpenBLAS (the wheel bundles its own copies in
+      # sparse_numba.libs through auditwheel); no SuiteSparse: UMFPACK is the
+      # user's library, absent here as on the Windows runner (its cells skip
+      # by name)
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
+        timeout-minutes: 10
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsuitesparse-dev libopenblas-dev libsuperlu-dev
+          sudo apt-get install -y --no-install-recommends libopenblas-dev libsuperlu-dev
 
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
@@ -303,6 +444,14 @@ jobs:
           cp run_tests.py /tmp/test_dir/
           cd /tmp/test_dir
           KMP_DUPLICATE_LIB_OK=TRUE python run_tests.py
+          # the wheel's contents (no cache files, the version, the three
+          # extensions, no SuiteSparse library; every library in
+          # sparse_numba.libs with its licence text, none on macOS),
+          # tests/test_sn6_wheel.py
+          python -m pip install pytest
+          cp -r "$GITHUB_WORKSPACE/tests" /tmp/test_dir/tests
+          SPARSE_NUMBA_WHEEL=$(ls "$GITHUB_WORKSPACE"/wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*.whl | head -n 1) \
+            python -m pytest tests/test_sn6_wheel.py -q -rs -p no:cacheprovider
 
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
@@ -318,6 +467,41 @@ jobs:
           Copy-Item run_tests.py $testDir/
           Set-Location $testDir
           python run_tests.py
+
+      # The suite from the installed wheel with UMFPACK ABSENT (no SuiteSparse
+      # DLL on the runner; the UMFPACK cells skip by name, tests/conftest.py;
+      # cache_key() reports umfpack=absent), the source-reading cells on the
+      # checkout (SPARSE_NUMBA_SOURCE_DIR), the wheel's contents read
+      # (SPARSE_NUMBA_WHEEL: no cache files, the seven DLLs with their
+      # licences beside, no SuiteSparse DLL)
+      # The 0.1.11 bit-identity cells hold on one BLAS kernel: the vendored
+      # OpenBLAS picks its kernel by CPU at run time (a Windows 3.13 runner
+      # differed in the last bits, PR #1 run at 1775bfc), so the kernel is
+      # pinned to the one the oracle was banked on, and the CPU and the
+      # kernel in use are printed
+      - name: Run the test suite from the wheel (Windows, UMFPACK absent)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          OPENBLAS_CORETYPE: Haswell
+        run: |
+          (Get-CimInstance Win32_Processor).Name
+          python -m pip install pytest scipy "setuptools>=70.1"
+          $pyver = "${{ matrix.python-version }}" -replace '\.', ''
+          $wheel = Get-ChildItem wheelhouse/sparse_numba-*-cp${pyver}-*.whl | Select-Object -First 1
+          python -m pip install --force-reinstall --no-deps $wheel.FullName
+          $env:SPARSE_NUMBA_WHEEL = $wheel.FullName
+          $env:SPARSE_NUMBA_SOURCE_DIR = "${{ github.workspace }}"
+          Remove-Item Env:SUITESPARSE_BIN -ErrorAction SilentlyContinue
+          Remove-Item Env:SPARSE_NUMBA_UMFPACK_LIBRARY -ErrorAction SilentlyContinue
+          $testDir = Join-Path $env:RUNNER_TEMP "sn_pytest"
+          New-Item -ItemType Directory -Force -Path $testDir | Out-Null
+          Copy-Item -Recurse tests (Join-Path $testDir "tests")
+          Set-Location $testDir
+          python -c "import sparse_numba; k = sparse_numba.cache_key(); print(sparse_numba.__file__); print(k); assert 'site-packages' in sparse_numba.__file__; assert ';umfpack=absent;' in k"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "import ctypes, os, sparse_numba; d = os.path.join(os.path.dirname(sparse_numba.__file__), 'vendor', 'openblas', 'bin'); os.add_dll_directory(d); f = ctypes.CDLL(os.path.join(d, 'libopenblas.dll')).openblas_get_corename; f.restype = ctypes.c_char_p; print('OpenBLAS core:', f().decode())"
+          python -m pytest tests -q -rs -p no:cacheprovider --basetemp (Join-Path $env:RUNNER_TEMP "snbt")
 
   # Build source distribution (sdist) for PyPI
   build_sdist:

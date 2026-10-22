@@ -1,28 +1,25 @@
 """
 Sparse Numba - Fast sparse solver with Numba support
 __init__.py under sparse_numba
+
+Import does path setup only, silently: the library
+directories are discovered relative to the package; nothing is imported
+from a backend and nothing is logged above DEBUG. The public names are
+bound lazily on first access, so an absent backend costs nothing at import
+and its first call returns BACKEND_ABSENT; is_slu_available(),
+is_umf_available() and backends() answer without logging, and
+require(backend) raises with the install hint.
 """
 
 import os
 import sys
 import platform
 import logging
-import ctypes
-import ctypes.util
 import importlib
 
-# Setup basic logging
-logging.basicConfig(level=logging.WARNING)
+# Logging stays at DEBUG; the package configures no handler of its own
 logger = logging.getLogger("sparse_numba")
-
-# Import submodules - we'll import these lazily to avoid circular imports
-from .conversion import matrix_conversion_numba
-
-
-# Track SuperLU availability
-_HAS_SUPERLU = False
-# Track UMFPACK availability
-_HAS_UMFPACK = False
+logger.addHandler(logging.NullHandler())
 
 # Determine platform
 PLATFORM = platform.system()
@@ -30,205 +27,75 @@ IS_WINDOWS = PLATFORM == 'Windows'
 IS_LINUX = PLATFORM == 'Linux'
 IS_MACOS = PLATFORM == 'Darwin'
 
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+_ROOT_DIR = os.path.dirname(_PACKAGE_DIR)
+
+_SUPERLU_MODULE = "sparse_numba.sparse_superlu.cy_superlu_wrapper"
+_UMFPACK_MODULE = "sparse_numba.sparse_umfpack.cy_umfpack_wrapper"
+
+
+def _prepend_env_path(variable, path):
+    current = os.environ.get(variable, "")
+    if path not in current.split(os.pathsep):
+        os.environ[variable] = path + os.pathsep + current if current else path
+
+
+def _add_library_dirs(windows_dirs, posix_dirs):
+    if IS_WINDOWS:
+        for dll_path in windows_dirs:
+            if os.path.exists(dll_path):
+                logger.debug("library directory: %s", dll_path)
+                # Set DLL directory on newer Python versions (3.8+)
+                if hasattr(os, 'add_dll_directory'):
+                    try:
+                        os.add_dll_directory(dll_path)
+                    except OSError as e:
+                        logger.debug("add_dll_directory(%s) failed: %s", dll_path, e)
+                # Also update PATH for all Python versions
+                _prepend_env_path('PATH', dll_path)
+    elif IS_LINUX or IS_MACOS:
+        variable = 'LD_LIBRARY_PATH' if IS_LINUX else 'DYLD_LIBRARY_PATH'
+        for lib_path in posix_dirs:
+            if os.path.exists(lib_path):
+                logger.debug("library directory: %s", lib_path)
+                _prepend_env_path(variable, lib_path)
+
+
+def _vendor_dirs(name):
+    """The search list of one vendored library: this package's own
+    vendor/<name> (wherever it is installed: site-packages, --target, a
+    user site; added at 0.2.0), then 0.1.11's list -- the source tree's
+    vendor/<name> and sys.prefix's site-packages/sparse_numba/vendor/<name>."""
+    windows = [
+        os.path.join(_PACKAGE_DIR, "vendor", name, "bin"),
+        os.path.join(_PACKAGE_DIR, "vendor", "openblas", "bin"),
+        os.path.join(_ROOT_DIR, "vendor", name, "bin"),
+        os.path.join(_ROOT_DIR, "vendor", "openblas", "bin"),
+        os.path.join(sys.prefix, "Lib", "site-packages", "sparse_numba", "vendor", name, "bin"),
+        os.path.join(sys.prefix, "Lib", "site-packages", "sparse_numba", "vendor", "openblas", "bin"),
+    ]
+    posix = [
+        os.path.join(_ROOT_DIR, "vendor", name, "lib"),
+        os.path.join(_ROOT_DIR, "vendor", "openblas", "lib"),
+    ]
+    return windows, posix
+
 
 # Setup library paths
 def initialize_superlu():
-    global _HAS_SUPERLU
-    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    """The SuperLU library directories (path setup only, silent)."""
+    _add_library_dirs(*_vendor_dirs("superlu"))
 
-    if IS_WINDOWS:
-        # Windows library handling
-        dll_paths = [
-            os.path.join(package_dir, "vendor", "superlu", "bin"),
-            os.path.join(package_dir, "vendor", "openblas", "bin"),
-            os.path.join(sys.prefix, "Lib", "site-packages", "sparse_numba", "vendor", "superlu", "bin"),
-            os.path.join(sys.prefix, "Lib", "site-packages", "sparse_numba", "vendor", "openblas", "bin"),
-        ]
-
-        # Add paths to DLL search path
-        for dll_path in dll_paths:
-            if os.path.exists(dll_path):
-                logger.info(f"Found SuperLU DLL directory: {dll_path}")
-
-                # Set DLL directory on newer Python versions (3.8+)
-                if hasattr(os, 'add_dll_directory'):
-                    try:
-                        os.add_dll_directory(dll_path)
-                    except Exception as e:
-                        logger.warning(f"Failed to add DLL directory {dll_path}: {e}")
-
-                # Also update PATH for all Python versions
-                if dll_path not in os.environ['PATH']:
-                    os.environ['PATH'] = dll_path + os.pathsep + os.environ['PATH']
-
-    elif IS_LINUX:
-        # Linux library handling
-        lib_paths = [
-            os.path.join(package_dir, "vendor", "superlu", "lib"),
-            os.path.join(package_dir, "vendor", "openblas", "lib"),
-        ]
-
-        # Add to LD_LIBRARY_PATH if they exist
-        for lib_path in lib_paths:
-            if os.path.exists(lib_path):
-                logger.info(f"Found SuperLU library directory: {lib_path}")
-                if 'LD_LIBRARY_PATH' in os.environ:
-                    if lib_path not in os.environ['LD_LIBRARY_PATH']:
-                        os.environ['LD_LIBRARY_PATH'] = lib_path + os.pathsep + os.environ['LD_LIBRARY_PATH']
-                else:
-                    os.environ['LD_LIBRARY_PATH'] = lib_path
-
-    elif IS_MACOS:
-        # macOS library handling
-        lib_paths = [
-            os.path.join(package_dir, "vendor", "superlu", "lib"),
-            os.path.join(package_dir, "vendor", "openblas", "lib"),
-        ]
-
-        # Add to DYLD_LIBRARY_PATH if they exist
-        for lib_path in lib_paths:
-            if os.path.exists(lib_path):
-                logger.info(f"Found SuperLU library directory: {lib_path}")
-                if 'DYLD_LIBRARY_PATH' in os.environ:
-                    if lib_path not in os.environ['DYLD_LIBRARY_PATH']:
-                        os.environ['DYLD_LIBRARY_PATH'] = lib_path + os.pathsep + os.environ['DYLD_LIBRARY_PATH']
-                else:
-                    os.environ['DYLD_LIBRARY_PATH'] = lib_path
-
-    # Check if SuperLU is available
-    # Try a more reliable detection method - see if we can import the Cython wrapper
-    try:
-        # First try importing the Cython extension module directly
-        from .sparse_superlu import cy_superlu_wrapper
-        _HAS_SUPERLU = True
-        logger.info("SuperLU libraries found. Module should work correctly.")
-    except ImportError as e:
-        # If that fails, check if we can find the library using ctypes
-        logger.debug(f"Error importing cy_superlu_wrapper: {e}")
-        superlu_lib = ctypes.util.find_library("superlu")
-        if superlu_lib:
-            _HAS_SUPERLU = True
-            logger.info("SuperLU libraries found via ctypes. Module should work correctly.")
-        else:
-            # Otherwise, issue the warning
-            _HAS_SUPERLU = False
-            logger.warning(
-                "\n" + "=" * 80 + "\n" +
-                "SuperLU libraries were not found in system paths! SuperLU functionality may not be available.\n" +
-                "However, bundled libraries may still work.\n" +
-                "=" * 80
-            )
-
-            # Try one more approach - dynamic import to see if it actually works
-            try:
-                # Create a temporary module object to test if import would work
-                import importlib.util
-                spec = importlib.util.find_spec("sparse_numba.sparse_superlu.cy_superlu_wrapper")
-                if spec is not None:
-                    _HAS_SUPERLU = True
-                    logger.info("SuperLU extension module found via spec. Module should work correctly.")
-            except Exception:
-                pass
 
 # Setup library paths
 def initialize_umfpack():
-    global _HAS_UMFPACK
-    package_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    if IS_WINDOWS:
-        # Windows library handling
-        dll_paths = [
-            os.path.join(package_dir, "vendor", "suitesparse", "bin"),
-            os.path.join(package_dir, "vendor", "openblas", "bin"),
-            os.path.join(sys.prefix, "Lib", "site-packages", "sparse_numba", "vendor", "suitesparse", "bin"),
-            os.path.join(sys.prefix, "Lib", "site-packages", "sparse_numba", "vendor", "openblas", "bin"),
-        ]
-
-        # Check system path locations
-        suitesparse_sys_env = os.environ.get('SUITESPARSE_BIN', '')
-        if suitesparse_sys_env:
-            dll_paths.append(suitesparse_sys_env)
-
-        # Track if we found SuiteSparse DLLs
-        found_suitesparse = False
-
-        # Add paths to DLL search path
-        for dll_path in dll_paths:
-            if os.path.exists(dll_path):
-                logger.info(f"Found DLL directory: {dll_path}")
-
-                # Check for UMFPACK DLLs
-                import glob
-                umfpack_pattern = os.path.join(dll_path, "*umfpack*.dll")
-                if glob.glob(umfpack_pattern):
-                    found_suitesparse = True
-                    logger.info(f"Found SuiteSparse DLLs in: {dll_path}")
-
-                # Set DLL directory on newer Python versions (3.8+)
-                if hasattr(os, 'add_dll_directory'):
-                    try:
-                        os.add_dll_directory(dll_path)
-                    except Exception as e:
-                        logger.warning(f"Failed to add DLL directory {dll_path}: {e}")
-
-                # Also update PATH for all Python versions
-                if dll_path not in os.environ['PATH']:
-                    os.environ['PATH'] = dll_path + os.pathsep + os.environ['PATH']
-
-        _HAS_UMFPACK = found_suitesparse
-
-    elif IS_LINUX:
-        # Linux library handling
-        lib_paths = [
-            os.path.join(package_dir, "vendor", "suitesparse", "lib"),
-            os.path.join(package_dir, "vendor", "openblas", "lib"),
-        ]
-
-        # Add to LD_LIBRARY_PATH if they exist
-        for lib_path in lib_paths:
-            if os.path.exists(lib_path):
-                logger.info(f"Found library directory: {lib_path}")
-                if 'LD_LIBRARY_PATH' in os.environ:
-                    if lib_path not in os.environ['LD_LIBRARY_PATH']:
-                        os.environ['LD_LIBRARY_PATH'] = lib_path + os.pathsep + os.environ['LD_LIBRARY_PATH']
-                else:
-                    os.environ['LD_LIBRARY_PATH'] = lib_path
-
-        # Check if UMFPACK library is available
-        umfpack_lib = ctypes.util.find_library("umfpack")
-        _HAS_UMFPACK = umfpack_lib is not None
-
-    elif IS_MACOS:
-        # macOS library handling
-        lib_paths = [
-            os.path.join(package_dir, "vendor", "suitesparse", "lib"),
-            os.path.join(package_dir, "vendor", "openblas", "lib"),
-        ]
-
-        # Add to DYLD_LIBRARY_PATH if they exist
-        for lib_path in lib_paths:
-            if os.path.exists(lib_path):
-                logger.info(f"Found library directory: {lib_path}")
-                if 'DYLD_LIBRARY_PATH' in os.environ:
-                    if lib_path not in os.environ['DYLD_LIBRARY_PATH']:
-                        os.environ['DYLD_LIBRARY_PATH'] = lib_path + os.pathsep + os.environ['DYLD_LIBRARY_PATH']
-                else:
-                    os.environ['DYLD_LIBRARY_PATH'] = lib_path
-
-        # Check if UMFPACK library is available
-        umfpack_lib = ctypes.util.find_library("umfpack")
-        _HAS_UMFPACK = umfpack_lib is not None
-
-    # Log the availability status
-    if _HAS_UMFPACK:
-        logger.info("UMFPACK libraries found. Module should work correctly.")
-    else:
-        logger.warning(
-            "\n" + "=" * 80 + "\n" +
-            "UMFPACK libraries were not found! UMFPACK functionality will not be available.\n" +
-            "Please install SuiteSparse via your package manager or ensure the libraries are in the search path.\n" +
-            "=" * 80
-        )
+    """The SuiteSparse library directories, and SUITESPARSE_BIN on Windows
+    (path setup only, silent)."""
+    windows, posix = _vendor_dirs("suitesparse")
+    suitesparse_sys_env = os.environ.get('SUITESPARSE_BIN', '')
+    if suitesparse_sys_env:
+        windows.append(suitesparse_sys_env)
+    _add_library_dirs(windows, posix)
 
 
 # Initialize UMFPACK during module import
@@ -237,10 +104,87 @@ initialize_umfpack()
 initialize_superlu()
 
 
+_AVAILABLE = {}
+
+
+def _available(module):
+    if module not in _AVAILABLE:
+        try:
+            importlib.import_module(module)
+            _AVAILABLE[module] = True
+        except ImportError as e:
+            logger.debug("%s did not import: %s", module, e)
+            _AVAILABLE[module] = False
+    return _AVAILABLE[module]
+
+
+def is_slu_available():
+    """Check if SuperLU is available"""
+    return _available(_SUPERLU_MODULE)
+
+
+def is_umf_available():
+    """Check if umfpack is available: the interface extension imports and
+    the user's UMFPACK library is found (UMFPACK is interface-only: the
+    library is the user's, loaded at runtime)"""
+    if not _available(_UMFPACK_MODULE):
+        return False
+    from sparse_numba._symbols import umfpack_library
+    return umfpack_library()[0] == 0
+
+
+# The lazily bound names: name -> the module that defines it
+_SUPERLU_INTERFACE = "sparse_numba.sparse_superlu.superlu_numba_interface"
+_UMFPACK_INTERFACE = "sparse_numba.sparse_umfpack.umfpack_numba_interface"
+_CONVERSION = "sparse_numba.conversion.matrix_conversion_numba"
+_API = "sparse_numba.api"
+
+_LAZY = {}
+for _verb in ("solve_csc", "solve_coo", "solve_csr", "factorize_csc", "factorize_coo",
+              "factorize_csr", "solve_factored", "free_factors"):
+    _LAZY["superlu_" + _verb] = _SUPERLU_INTERFACE
+    _LAZY["umfpack_" + _verb] = _UMFPACK_INTERFACE
+for _name in ("convert_coo_to_csc", "convert_csr_to_csc", "convert_coo_to_csr",
+              "sparse_matvec_csr", "validate_sparse_matrix", "check_matrix_properties",
+              "validate_csc_matrix"):
+    _LAZY[_name] = _CONVERSION
+for _name in ("factorize", "solve_into", "solve_many_into", "refactorize", "free", "solve",
+              "handle_info", "Factors", "require", "backends", "is_eigen_available",
+              "SUPERLU", "UMFPACK", "EIGEN_LU", "EIGEN_LDLT",
+              "NATURAL", "COLAMD", "AMD", "MMD_AT_PLUS_A"):
+    _LAZY[_name] = _API
+for _name in ("explain", "SparseNumbaError", "SymbolConflictError"):
+    _LAZY[_name] = "sparse_numba.errors"
+_LAZY["cache_key"] = "sparse_numba._symbols"
+del _verb, _name
+
+# Submodules bound by name
+_SUBMODULES = {
+    "matrix_conversion_numba": _CONVERSION,
+    "symbols": "sparse_numba.symbols",
+}
+
+
+def __getattr__(name):
+    if name in _SUBMODULES:
+        value = importlib.import_module(_SUBMODULES[name])
+    elif name in _LAZY:
+        value = getattr(importlib.import_module(_LAZY[name]), name)
+    else:
+        raise AttributeError(f"module 'sparse_numba' has no attribute {name!r}")
+    globals()[name] = value
+    return value
+
+
+def __dir__():
+    return sorted(set(globals()) | set(_LAZY) | set(_SUBMODULES))
+
+
 __all__ = [
     'matrix_conversion_numba',
     'is_slu_available',
     'is_umf_available',
+    'cache_key',
     # Pre-factorization API (SuperLU)
     'superlu_factorize_csc', 'superlu_factorize_coo', 'superlu_factorize_csr',
     'superlu_solve_factored', 'superlu_free_factors',
@@ -249,20 +193,14 @@ __all__ = [
     'umfpack_solve_factored', 'umfpack_free_factors',
     # Sparse utilities
     'convert_coo_to_csr', 'sparse_matvec_csr',
+    # The backend-neutral API (added at 0.2.0)
+    'factorize', 'solve_into', 'solve_many_into', 'refactorize', 'free', 'solve',
+    'handle_info', 'Factors', 'explain', 'SparseNumbaError', 'SymbolConflictError',
+    'symbols', 'is_eigen_available', 'backends', 'require',
+    'SUPERLU', 'UMFPACK', 'EIGEN_LU', 'EIGEN_LDLT',
+    'NATURAL', 'COLAMD', 'AMD', 'MMD_AT_PLUS_A',
 ]
 
-def is_slu_available():
-    """Check if SuperLU is available"""
-    return _HAS_SUPERLU
 
-def is_umf_available():
-    """Check if umfpack is available"""
-    return _HAS_UMFPACK
-
-# Variables to track availability of solvers
-# has_umfpack = False
-# has_superlu = False
-
-
-
+__version__ = "0.2.0"
 __author__ = "Tianqi Hong"

@@ -1,0 +1,6 @@
+# the vehicles' files the cells read, copied byte for byte from the comparison vehicles (their SHA256SUMS); kept byte for byte (tests/data/.gitattributes: no EOL conversion); sha256sum format
+26fdebed09ab03e25506ca56e5280fe1f38d02865e5465177277cde404b897d3  n69/G.mtx
+33d4eb036d50c93a94066af0f7efb570013de95cddc53fa03579e91ff28ca613  n69/b.mtx
+ae06735fb646cf1ffc4dc6c2e3652ded7e4e721c6f001583cdd01392515933ce  n207/S.mtx
+13547df7cd62894172ab207554de3fb75d4a8b480dd33991585a6f0d71b5be26  n207/b_s.mtx
+7f3ca1347f871aac2e9e06a408c3c6b8a905023493d5d853cb3d4962b9b817f7  n207/x_C5.txt
