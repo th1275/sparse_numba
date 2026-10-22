@@ -216,12 +216,17 @@ jobs:
                   done
                 }
                 collect
-                if [ -z "$(ls "$LICDIR/$key")" ]; then
-                  # the image installs without docs: the owner again, with them
-                  dnf reinstall -y --setopt=tsflags= "$pkg" >/dev/null 2>&1 || true
+                if [ -z "$(ls "$LICDIR/$key" | grep -v -x SOURCE.txt)" ]; then
+                  # the image installs without docs: every package of the
+                  # source package again, with its doc and licence files
+                  dnf reinstall -y --setopt=tsflags= $pkgs >/dev/null 2>&1 || true
                   collect
                 fi
-                echo "$lib: $pkg (source $srpm); licence files from: $pkgs" >> "$LICDIR/$key/SOURCE.txt"
+                if [ -z "$(ls "$LICDIR/$key" | grep -v -x SOURCE.txt)" ]; then
+                  echo "no licence file found for $key; what the packages carry:"
+                  for p in $pkgs; do echo "  $p: $(rpm -q --qf '%{LICENSE}' "$p")"; rpm -qL "$p"; rpm -qd "$p" | head -20; done
+                fi
+                echo "$lib: $pkg (source $srpm; licence $(rpm -q --qf '%{LICENSE}' "$pkg")); licence files from: $pkgs" >> "$LICDIR/$key/SOURCE.txt"
               done
               echo "licence texts for $key:"; ls -l "$LICDIR/$key"
               ls "$LICDIR/$key" | grep -v -x SOURCE.txt >/dev/null || echo "WARNING: no licence text for $key"
