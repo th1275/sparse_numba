@@ -222,6 +222,18 @@ jobs:
                   dnf reinstall -y --setopt=tsflags= $pkgs >/dev/null 2>&1 || true
                   collect
                 fi
+                if [ "$key" = atlas ] && [ -z "$(ls "$LICDIR/$key" | grep -v -x SOURCE.txt)" ]; then
+                  # ATLAS's RPMs carry no licence file; its BSD licence is the
+                  # comment block heading its headers (atlas-devel): copied
+                  # from the first header that carries it, the file named
+                  dnf install -y atlas-devel >/dev/null 2>&1 || true
+                  hdr=$(grep -rl "Automatically Tuned Linear Algebra Software" /usr/include 2>/dev/null | head -n 1)
+                  if [ -n "$hdr" ]; then
+                    { echo "The ATLAS licence, as it heads $hdr (package $(rpm -qf "$hdr")):"; echo;
+                      awk '/Automatically Tuned Linear Algebra Software/{p=1} p{print} /POSSIBILITY OF SUCH DAMAGE/{if(p) exit}' "$hdr"; } > "$LICDIR/$key/LICENSE.from-header.txt"
+                    grep -q "POSSIBILITY OF SUCH DAMAGE" "$LICDIR/$key/LICENSE.from-header.txt" || rm -f "$LICDIR/$key/LICENSE.from-header.txt"
+                  fi
+                fi
                 if [ -z "$(ls "$LICDIR/$key" | grep -v -x SOURCE.txt)" ]; then
                   echo "no licence file found for $key; what the packages carry:"
                   for p in $pkgs; do echo "  $p: $(rpm -q --qf '%{LICENSE}' "$p")"; rpm -qL "$p"; rpm -qd "$p" | head -20; done
