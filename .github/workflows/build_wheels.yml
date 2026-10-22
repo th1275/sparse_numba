@@ -204,7 +204,8 @@ jobs:
               'libgfortran libgfortran.so.*' 'libquadmath libquadmath.so.*' |
             while read -r key pattern; do
               mkdir -p "$LICDIR/$key"
-              for lib in $(ls /usr/lib64/$pattern 2>/dev/null); do
+              # (ATLAS's libraries sit in /usr/lib64/atlas/ on EL8)
+              for lib in $(ls /usr/lib64/$pattern /usr/lib64/atlas/$pattern 2>/dev/null); do
                 pkg=$(rpm -qf "$lib" 2>/dev/null) || continue
                 srpm=$(rpm -q --qf '%{SOURCERPM}' "$pkg")
                 pkgs="$pkg $(rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH} %{SOURCERPM}\n' | while read -r p s; do if [ "$s" = "$srpm" ]; then echo "$p"; fi; done)"
