@@ -399,10 +399,18 @@ jobs:
       # checkout (SPARSE_NUMBA_SOURCE_DIR), the wheel's contents read
       # (SPARSE_NUMBA_WHEEL: no cache files, the seven DLLs with their
       # licences beside, no SuiteSparse DLL)
+      # The 0.1.11 bit-identity cells hold on one BLAS kernel: the vendored
+      # OpenBLAS picks its kernel by CPU at run time (a Windows 3.13 runner
+      # differed in the last bits, PR #1 run at 1775bfc), so the kernel is
+      # pinned to the one the oracle was banked on, and the CPU and the
+      # kernel in use are printed
       - name: Run the test suite from the wheel (Windows, UMFPACK absent)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          OPENBLAS_CORETYPE: Haswell
         run: |
+          (Get-CimInstance Win32_Processor).Name
           python -m pip install pytest scipy "setuptools>=70.1"
           $pyver = "${{ matrix.python-version }}" -replace '\.', ''
           $wheel = Get-ChildItem wheelhouse/sparse_numba-*-cp${pyver}-*.whl | Select-Object -First 1
@@ -417,6 +425,7 @@ jobs:
           Set-Location $testDir
           python -c "import sparse_numba; k = sparse_numba.cache_key(); print(sparse_numba.__file__); print(k); assert 'site-packages' in sparse_numba.__file__; assert ';umfpack=absent;' in k"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "import ctypes, os, sparse_numba; d = os.path.join(os.path.dirname(sparse_numba.__file__), 'vendor', 'openblas', 'bin'); os.add_dll_directory(d); f = ctypes.CDLL(os.path.join(d, 'libopenblas.dll')).openblas_get_corename; f.restype = ctypes.c_char_p; print('OpenBLAS core:', f().decode())"
           python -m pytest tests -q -rs -p no:cacheprovider --basetemp (Join-Path $env:RUNNER_TEMP "snbt")
 
   # Build source distribution (sdist) for PyPI

@@ -251,7 +251,8 @@ Code written for 0.1.11 runs unchanged: `superlu_solve_csc` / `_coo` /
 set, the conversions (`convert_coo_to_csc`, `convert_csr_to_csc`,
 `convert_coo_to_csr`, `sparse_matvec_csr`) and `is_slu_available` /
 `is_umf_available`. They are thin shims over the interface above;
-SuperLU's give bit-identical solutions to 0.1.11 (NATURAL ordering). The
+SuperLU's give bit-identical solutions to 0.1.11 (NATURAL ordering) on
+the same CPU and BLAS kernel. The
 values some codes carry changed, and `*_solve_factored`, the
 `*_factorize_*` forms without an ordering and `*_free_factors` are
 deprecated (kept through 0.2.x): see the

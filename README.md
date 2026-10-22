@@ -15,7 +15,8 @@ machine; details and every size in [Performance](#performance-the-comparison-rec
 
 - Solve: 3969 us in 0.1.11 (SuperLU, NATURAL only) -> 1426 us with the new
   ordering choice (SuperLU COLAMD, 2.8x) and 755 us with the new Eigen
-  backend (Eigen LU COLAMD, 5.3x); SuperLU NATURAL stays bit-identical.
+  backend (Eigen LU COLAMD, 5.3x); SuperLU NATURAL stays bit-identical to
+  0.1.11 on the same CPU and BLAS kernel.
 - Factorize: 68961 us -> 16450 us (SuperLU COLAMD, 4.2x) and 12585 us (Eigen
   LU COLAMD, 5.5x); the new `refactorize` re-factors the same pattern in
   10138 us (SuperLU COLAMD).
@@ -234,7 +235,9 @@ set; `convert_coo_to_csc`, `convert_csr_to_csc`, `convert_coo_to_csr`,
 `sparse_matvec_csr`, `validate_sparse_matrix`, `check_matrix_properties`,
 `validate_csc_matrix`; `is_slu_available`, `is_umf_available`. They are
 thin shims over the interface above; SuperLU's give bit-identical
-solutions to 0.1.11 (NATURAL ordering). The values some codes carry
+solutions to 0.1.11 (NATURAL ordering) on the same CPU and BLAS kernel
+(OpenBLAS picks its kernel by CPU at run time; CI pins
+OPENBLAS_CORETYPE=Haswell for this check). The values some codes carry
 changed (the 0.2.0 release notes, docs/RELEASE_NOTES_0.2.0.md).
 
 ```python
@@ -271,7 +274,7 @@ The deprecation is in the documentation only (njit functions do not warn).
 
 ## Performance: the comparison record
 
-The numbers below are one run of `tools/compare_record.py` at tree cb0617e on one machine (its json record, holding every sample, sha256 ff2cc551f5347012b8aa88870be4b88afd36834445dde17f4d923364f51bf1fe; the record is kept with the development tree). Machine: Intel(R) Core(TM) Ultra 7 258V, 8 logical CPUs, Windows power plan Balanced; Python 3.11.9, numpy 2.4.6, numba 0.67.0; the wheel's build (`-O3 -DNDEBUG`, MinGW gcc 14.2.0). Single-threaded (OPENBLAS / OMP / MKL / NUMEXPR threads = 1; Eigen with EIGEN_DONT_PARALLELIZE). The protocol: per arm the factorization is the second of two calls, 7 repeats; the substitution is `solve_into` on a held `out` from a numba loop, 10,000 calls a repeat x 7 repeats; refactorize 100 calls x 7; a repeat's calls cut to fit 2 s (the actual N in the record); an arm whose first factorization takes over 0.5 s is run as a function test only (its solution checked, no timing). Every value is the median of the 7 repeats, in microseconds; min and max are in the record. Every arm's solution is within 1e-10 (relative, max norm) of the 0.1.11 SuperLU solution; SuperLU NATURAL's is bit-identical to it at every size.
+The numbers below are one run of `tools/compare_record.py` at tree cb0617e on one machine (its json record, holding every sample, sha256 ff2cc551f5347012b8aa88870be4b88afd36834445dde17f4d923364f51bf1fe; the record is kept with the development tree). Machine: Intel(R) Core(TM) Ultra 7 258V, 8 logical CPUs, Windows power plan Balanced; Python 3.11.9, numpy 2.4.6, numba 0.67.0; the wheel's build (`-O3 -DNDEBUG`, MinGW gcc 14.2.0). Single-threaded (OPENBLAS / OMP / MKL / NUMEXPR threads = 1; Eigen with EIGEN_DONT_PARALLELIZE). The protocol: per arm the factorization is the second of two calls, 7 repeats; the substitution is `solve_into` on a held `out` from a numba loop, 10,000 calls a repeat x 7 repeats; refactorize 100 calls x 7; a repeat's calls cut to fit 2 s (the actual N in the record); an arm whose first factorization takes over 0.5 s is run as a function test only (its solution checked, no timing). Every value is the median of the 7 repeats, in microseconds; min and max are in the record. Every arm's solution is within 1e-10 (relative, max norm) of the 0.1.11 SuperLU solution; SuperLU NATURAL's is bit-identical to it at every size (the same CPU and BLAS kernel).
 
 The matrices: G, the unsymmetric chain matrix of a power-system model (n = 688 / 2068 / 6898 / 20698); S, its symmetric positive definite nodal reduction (n = 207 / 621 / 2070 / 6210). The same right-hand side every call.
 

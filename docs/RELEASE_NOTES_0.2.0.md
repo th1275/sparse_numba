@@ -2,8 +2,9 @@
 
 0.2.0 is one comprehensive update over 0.1.11. Every 0.1.11 public name
 keeps its name, positional signature and return shape; SuperLU at the
-NATURAL ordering gives bit-identical solutions to 0.1.11 (the oracle cells
-of tests/). What changed is listed below; the README holds the API, the
+NATURAL ordering gives bit-identical solutions to 0.1.11 on the same CPU
+and BLAS kernel (the oracle cells of tests/; OpenBLAS selects its kernel
+by CPU at run time, so CI pins OPENBLAS_CORETYPE=Haswell for them). What changed is listed below; the README holds the API, the
 backend table and the measured numbers.
 
 ## Added
