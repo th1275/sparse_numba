@@ -14,7 +14,14 @@ Wheel cells (the test data copies; the wheel's contents and licences):
   DLL absent, the licence file of each DLL beside it; on every platform no
   SuiteSparse library file, and Eigen's COPYING.MPL2 and COPYING.README
   beside the Eigen extension (byte-equal to third_party/eigen-3.4.0's where
-  the source tree carries it).
+  the source tree carries it);
+- THE LIBRARIES A REPAIR BUNDLES (sparse_numba.libs/, auditwheel's, on the
+  Linux wheels): each one maps to its folder of licence texts,
+  sparse_numba/third_party_licenses/linux/<name>/ (copied from the
+  manylinux image's rpm licence and COPYING / LICENSE files by
+  build_wheels.yml), which holds at least one text besides SOURCE.txt, and
+  the GCC runtime's named files; a library with no mapping fails; no
+  sparse_numba.libs (the macOS and Windows wheels) passes.
 """
 
 import hashlib
@@ -41,6 +48,18 @@ WINDOWS_DLLS = {
     "superlu/bin/libwinpthread-1.dll": ("LICENSE.winpthreads.COPYING",),
     "openblas/bin/libopenblas.dll": ("LICENSE.openblas", "LICENSE.openblas-lapack"),
 }
+
+# a library in sparse_numba.libs/ (auditwheel's name: <lib>-<hash>.so...) ->
+# its folder of licence texts and the files that folder must hold besides
+# one text at least (docs/LICENSE_AUDIT.md, the Linux rows)
+LINUX_LICENCES = "sparse_numba/third_party_licenses/linux/"
+BUNDLED_LIBRARIES = (
+    (re.compile(r"libsuperlu[-.]"), "superlu", ()),
+    (re.compile(r"libopenblas"), "openblas", ()),
+    (re.compile(r"lib[st]atlas[-.]"), "atlas", ()),
+    (re.compile(r"libgfortran[-.]"), "libgfortran", ("COPYING3", "COPYING.RUNTIME")),
+    (re.compile(r"libquadmath[-.]"), "libquadmath", ("COPYING.LIB",)),
+)
 
 
 # a SuiteSparse library file by its name: lib<name>.<ext> or lib<name>-<hash>...
@@ -120,3 +139,30 @@ def test_wheel_contents():
             assert folder + licence in names, (dll, licence)
     assert not [n for n in names if n.lower().endswith(".dll")
                 and ("suitesparse" in n.lower() or "umfpack" in n.lower())]
+
+
+def test_wheel_bundled_libraries_licensed():
+    path = os.environ.get("SPARSE_NUMBA_WHEEL")
+    if not path:
+        pytest.skip("SPARSE_NUMBA_WHEEL unset: no wheel to read")
+    with zipfile.ZipFile(path) as z:
+        sizes = {i.filename: i.file_size for i in z.infolist() if not i.filename.endswith("/")}
+    libs = sorted(n for n in sizes if n.startswith("sparse_numba.libs/"))
+    missing = []
+    for lib in libs:
+        base = lib.rsplit("/", 1)[-1]
+        found = [(folder, required) for pattern, folder, required in BUNDLED_LIBRARIES
+                 if pattern.match(base)]
+        if not found:
+            missing.append((lib, "no licence mapping"))
+            continue
+        folder, required = found[0]
+        prefix = LINUX_LICENCES + folder + "/"
+        texts = sorted(n[len(prefix):] for n in sizes
+                       if n.startswith(prefix) and "/" not in n[len(prefix):] and sizes[n] > 0)
+        if not [t for t in texts if t != "SOURCE.txt"]:
+            missing.append((lib, prefix + ": no licence text"))
+        for name in required:
+            if name not in texts:
+                missing.append((lib, prefix + name + " absent"))
+    assert missing == [], missing

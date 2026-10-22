@@ -20,8 +20,11 @@ machine; details and every size in [Performance](#performance-the-comparison-rec
 - Factorize: 68961 us -> 16450 us (SuperLU COLAMD, 4.2x) and 12585 us (Eigen
   LU COLAMD, 5.5x); the new `refactorize` re-factors the same pattern in
   10138 us (SuperLU COLAMD).
-- Overhead of the numba wrapper against a direct C++ call: within the
-  run-to-run spread at every size (ratios 0.8 to 1.2 on the large matrices).
+- Overhead of the numba wrapper against a direct C++ call (sparse_numba /
+  direct, ratio of medians): 0.85 to 1.23 at the largest size and 0.77 to
+  2.17 over all four sizes, in both directions; in 19 of the 102 measured
+  cells sparse_numba's and the direct call's min - max ranges do not
+  overlap.
 
 [![PyPI version](https://badge.fury.io/py/sparse-numba.svg)](https://badge.fury.io/py/sparse-numba)
 [![Build Status](https://github.com/th1275/sparse_numba/actions/workflows/build_wheels.yml/badge.svg)](https://github.com/th1275/sparse_numba/actions)
@@ -48,11 +51,14 @@ on 0.1.11.
 | Platform | Python | Wheels | SuperLU / OpenBLAS | UMFPACK |
 |---|---|---|---|---|
 | Windows (x86_64) | 3.10 - 3.13 | yes | vendored in the wheel | the user's SuiteSparse |
-| Linux (x86_64, manylinux_2_28: glibc >= 2.28) | 3.10 - 3.13 | yes | the system's (libsuperlu, libopenblas) | the user's SuiteSparse |
+| Linux (x86_64, manylinux_2_28: glibc >= 2.28) | 3.10 - 3.13 | yes | bundled in the wheel (SuperLU 5.x, OpenBLAS, ATLAS, the gfortran runtime) | the user's SuiteSparse |
 | macOS (Apple Silicon) | 3.10 - 3.13 | yes | Homebrew's (superlu, openblas) | the user's SuiteSparse |
 | macOS (Intel) | 3.10 - 3.13 | build from source | Homebrew's | the user's SuiteSparse |
 
 Intel Mac users: `pip install sparse-numba --no-binary=sparse-numba`.
+SuperLU's version differs per platform: 7.0.0 in the Windows wheels, 5.x
+in the Linux wheels (AlmaLinux 8's package, bundled by auditwheel into
+`sparse_numba.libs`), Homebrew's on macOS.
 The Linux wheels are manylinux_2_28: they need glibc >= 2.28 (e.g.
 Ubuntu 18.10+, Debian 10+, RHEL / AlmaLinux / Rocky 8+); on an older
 glibc pip builds from the sdist (section "Building from source").
@@ -184,7 +190,7 @@ never a silent fallback.
 | refactorize on the same pattern | yes (SamePattern) | yes (numeric again) | yes (factorize after analyzePattern) | yes |
 | several right-hand sides in one call | yes (dgstrs nrhs) | a loop per column | yes (a dense block) | yes |
 | solve into a held out | yes | yes | yes | yes |
-| what it needs at run time | the vendored DLLs (Windows) / the system's (Linux, macOS) | the user's SuiteSparse | nothing (compiled in) | nothing (compiled in) |
+| what it needs at run time | the vendored DLLs (Windows) / the libraries bundled in the wheel (Linux) / Homebrew's (macOS) | the user's SuiteSparse | nothing (compiled in) | nothing (compiled in) |
 | threads | single | single | single (EIGEN_DONT_PARALLELIZE) | single |
 | handle_info's nnz_L / nnz_U | L (SCformat), U (NCformat) | Info[UMFPACK_LNZ], Info[UMFPACK_UNZ] | nnzL(), nnzU() | the strictly lower L; 0 |
 | pivot tolerance (handle_info) | DiagPivotThresh (1.0) | 1.0 | 1.0 | 0.0 (no pivoting) |
@@ -409,11 +415,18 @@ sparse_numba is BSD 3-Clause. The components it ships or compiles in
 | GCC 14.2.0 runtime (libgcc_s_seh-1, libgomp-1, libgfortran-5) | GPL-3.0+ with the GCC Runtime Library Exception | Windows wheel, the licence files beside them |
 | libquadmath-0 (GCC 14.2.0) | LGPL-2.1+ | Windows wheel, unmodified and replaceable, its licence text beside it |
 | mingw-w64 winpthreads | MIT / BSD | Windows wheel, its licence beside it |
+| SuperLU 5.x (AlmaLinux 8) | BSD 3-Clause | Linux wheels: sparse_numba.libs/libsuperlu-*, its licence in sparse_numba/third_party_licenses/linux/superlu/ |
+| OpenBLAS 0.3.15 (AlmaLinux 8) | BSD 3-Clause | Linux wheels: sparse_numba.libs/libopenblas-*, its licence in .../linux/openblas/ |
+| ATLAS 3.10 (libsatlas; SuperLU's BLAS on AlmaLinux 8) | BSD-style | Linux wheels: sparse_numba.libs/libsatlas-*, its licence in .../linux/atlas/ |
+| GCC runtime (libgfortran, AlmaLinux 8's) | GPL-3.0+ with the GCC Runtime Library Exception | Linux wheels, the licence files in .../linux/libgfortran/ |
+| libquadmath (GCC, AlmaLinux 8's) | LGPL-2.1+ | Linux wheels, unmodified and replaceable, its licence text in .../linux/libquadmath/ |
 | Eigen 3.4.0 | MPL-2.0 (compiled with `-DEIGEN_MPL2_ONLY`) | compiled into the Eigen extension; the source form at https://eigen.tuxfamily.org and in this repository's third_party/eigen-3.4.0 |
 | SuiteSparse (UMFPACK, CHOLMOD, ...) | GPL / LGPL | not shipped: interface-only, the user's library |
 
-On Linux and macOS SuperLU and OpenBLAS come from the system's packages;
-what each wheel bundles is read from that wheel by the release's audit.
+On macOS SuperLU and OpenBLAS are Homebrew's, loaded at run time; the
+macOS wheels bundle nothing. CI reads every wheel's own listing
+(tests/test_sn6_wheel.py): each library a Linux wheel bundles must have
+its licence text in the wheel.
 
 ## Citation
 

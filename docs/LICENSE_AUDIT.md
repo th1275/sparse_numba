@@ -278,13 +278,47 @@ fab3dd6bdab226f1... and c83230b770f17ef1..., equal to third_party's), its
 text files and RECORD; its three extensions and every vendored file are the
 same bytes. The release's own wheel listing is re-read before the tag.
 
-LINUX / MACOS: read on the wheels CI builds. Those wheels take SuperLU /
-OpenBLAS from the CI images' system packages (build_wheels.yml; the
-manylinux repair may bundle system libraries -- never a SuiteSparse one:
-the UMFPACK extension links none, and CI fails a wheel that carries one;
-macOS skips delocate); their audit is run on each wheel's actual contents
-when CI has built them. Not covered here either: the Cython-generated C
-and numpy's headers used at build.
+LINUX (2026-10-22, SN-6e): read on CI's cp311 Linux wheel of PR #1's run
+at 4c9d9ad (sparse_numba-0.2.0-cp311-cp311-manylinux_2_27_x86_64.
+manylinux_2_28_x86_64.whl, sha256 45523b486266c969...). The wheels are
+built in the manylinux_2_28 image (AlmaLinux 8) against its packages
+(build_wheels.yml's CIBW_BEFORE_ALL_LINUX: openblas-devel and
+suitesparse-devel from powertools, SuperLU-devel from EPEL 8), and
+auditwheel's repair copies every non-policy library the extensions load
+into sparse_numba.libs/ (renamed <lib>-<hash>). That wheel carried five,
+and no licence text for any of them (only dist-info/licenses/LICENSE and
+Eigen's COPYING files); the version is read from the file name:
+
+| sparse_numba.libs/ file | size | row | library | licence | texts in the wheel (sparse_numba/third_party_licenses/linux/) |
+|---|---|---|---|---|---|
+| libsuperlu-17b63ae5.so.5.1 | 6.3 MB | RL1 | SuperLU 5.x (EPEL 8) | BSD 3-Clause | superlu/ |
+| libopenblas-r0-11edc3fa.3.15.so | 37.4 MB | RL2 | OpenBLAS 0.3.15 (AlmaLinux 8) | BSD 3-Clause | openblas/ |
+| libsatlas-6c1f674f.so.3.10 | 16.9 MB | RL3 | ATLAS 3.10 (EPEL's SuperLU links it) | BSD-style | atlas/ |
+| libgfortran-e2a3c254.so.5.0.0 | 8.4 MB | RL4 | GCC runtime, libgfortran (AlmaLinux 8) | GPL-3.0+ with the GCC Runtime Library Exception (as R6 / L2) | libgfortran/ (COPYING3, COPYING.RUNTIME) |
+| libquadmath-80a2a415.so.0.0.0 | 2.1 MB | RL5 | GCC runtime, libquadmath (AlmaLinux 8) | LGPL-2.1+ (L1) | libquadmath/ (COPYING.LIB) |
+
+From 0.2.0 the texts are copied at build time from the image itself: for
+each library, the rpm package owning it and the installed packages built
+from the same source package (GCC's licence files are libgcc's, from the
+same gcc source package as libgfortran and libquadmath; OpenBLAS's
+LICENSE is the base openblas package's), their rpm %license files and
+their COPYING / LICENSE documentation files, into the folder named
+above, with SOURCE.txt naming the library, its package and the packages
+the texts came from (setup.py's Linux package_data puts the folder in
+the wheel). tests/test_sn6_wheel.py, run on every Linux and macOS test
+job against its wheel, maps each sparse_numba.libs file to its folder
+and fails a library with no mapping, a folder with no text besides
+SOURCE.txt, or a GCC runtime folder without the files named above. The
+texts' names and sha256 are read from the first CI wheel that carries
+them (not from this machine: no manylinux image here). The rule holds:
+RL1 - RL4 are BSD-compatible or runtimes under the exception; RL5 is
+read under L1 (L5). None is a SuiteSparse library (CI fails a wheel that
+carries one).
+
+MACOS: delocate is skipped; the wheels load Homebrew's superlu / openblas
+at run time and bundle nothing (no sparse_numba.libs; the cell above
+passes on an absent folder). Not covered here either: the
+Cython-generated C and numpy's headers used at build.
 
 THE DECISIONS (the maintainer's)
 L1  libquadmath-0.dll (R5) is LGPL-2.1-or-later and is imported by
@@ -301,3 +335,9 @@ L3  libsuperlu_fortran-7.dll was shipped and imported by nothing in the
     change; R2's licence).
 L4  Eigen's licence text in the wheel: the extension compiles Eigen in;
     COPYING.MPL2 and COPYING.README ship beside it from 0.2.0.
+L5  The Linux wheels' libquadmath (RL5) is read under L1, the same
+    exception: AlmaLinux 8's binary, its code unmodified (auditwheel's
+    repair changes only its file name and its ELF soname / needed / rpath
+    entries), dynamically loaded and replaceable, its LGPL text in the
+    wheel (third_party_licenses/linux/libquadmath/). The Linux licence
+    texts ship from 0.2.0 (SN-6e); 0.1.11's Linux wheels carried none.

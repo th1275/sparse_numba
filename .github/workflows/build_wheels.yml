@@ -187,6 +187,45 @@ jobs:
                 cp "$HEADER_DIR"/*.h /tmp/superlu_include/ 2>/dev/null || true
               fi
             fi
+            # The licence texts of the libraries auditwheel bundles into
+            # sparse_numba.libs (SuperLU 5.x, OpenBLAS, ATLAS, libgfortran,
+            # libquadmath): for each, the package owning the library and the
+            # installed packages built from the same source package (gcc's
+            # licence files are libgcc's; openblas's LICENSE is the base
+            # package's), their rpm -qL files and rpm -qd's COPYING / LICENSE
+            # files, copied into sparse_numba/third_party_licenses/linux/<name>/
+            # with SOURCE.txt naming the packages (setup.py's Linux
+            # package_data puts them in the wheel; tests/test_sn6_wheel.py
+            # maps every bundled library to its folder). Missing texts are
+            # reported here and fail that test
+            LICDIR={project}/sparse_numba/third_party_licenses/linux
+            printf '%s\n' 'superlu libsuperlu.so.*' 'openblas libopenblas*.so*' \
+              'atlas libsatlas.so.*' 'atlas libtatlas.so.*' \
+              'libgfortran libgfortran.so.*' 'libquadmath libquadmath.so.*' |
+            while read -r key pattern; do
+              mkdir -p "$LICDIR/$key"
+              for lib in $(ls /usr/lib64/$pattern 2>/dev/null); do
+                pkg=$(rpm -qf "$lib" 2>/dev/null) || continue
+                srpm=$(rpm -q --qf '%{SOURCERPM}' "$pkg")
+                pkgs="$pkg $(rpm -qa --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH} %{SOURCERPM}\n' | while read -r p s; do if [ "$s" = "$srpm" ]; then echo "$p"; fi; done)"
+                collect() {
+                  for p in $pkgs; do
+                    for f in $(rpm -qL "$p" 2>/dev/null) $(rpm -qd "$p" 2>/dev/null | grep -i -E '/(copying|licen[cs]e)[^/]*$'); do
+                      if [ -f "$f" ]; then cp -n "$f" "$LICDIR/$key/"; fi
+                    done
+                  done
+                }
+                collect
+                if [ -z "$(ls "$LICDIR/$key")" ]; then
+                  # the image installs without docs: the owner again, with them
+                  dnf reinstall -y --setopt=tsflags= "$pkg" >/dev/null 2>&1 || true
+                  collect
+                fi
+                echo "$lib: $pkg (source $srpm); licence files from: $pkgs" >> "$LICDIR/$key/SOURCE.txt"
+              done
+              echo "licence texts for $key:"; ls -l "$LICDIR/$key"
+              ls "$LICDIR/$key" | grep -v -x SOURCE.txt >/dev/null || echo "WARNING: no licence text for $key"
+            done
           CIBW_BEFORE_ALL_MACOS: >
             brew install suite-sparse superlu openblas;
             OPENBLAS_PREFIX=$(brew --prefix openblas);
@@ -194,8 +233,9 @@ jobs:
             mkdir -p $HOME/homebrew_libs/openblas/lib;
             ln -sf $OPENBLAS_PREFIX/lib/libopenblas.dylib $HOME/homebrew_libs/openblas/lib/;
             echo "Created symlink in $HOME/homebrew_libs/openblas/lib/"
-          # Skip delocate on macOS -- we rely on system-installed libs (brew)
-          # just like Linux relies on system libs without bundling
+          # Skip delocate on macOS -- the wheels load Homebrew's superlu /
+          # openblas at run time, nothing is bundled (the Linux wheels, by
+          # contrast, bundle theirs through auditwheel's repair)
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
             cp {wheel} {dest_dir}/
           # Skip delvewheel on Windows: the wheel already vendors the seven
@@ -308,9 +348,10 @@ jobs:
           echo "Available wheels:"
           ls -la wheelhouse/
 
-      # The wheel's runtime libraries only (system SuperLU and OpenBLAS); no
-      # SuiteSparse: UMFPACK is the user's library, absent here as on the
-      # Windows runner (its cells skip by name)
+      # The system SuperLU and OpenBLAS (the wheel bundles its own copies in
+      # sparse_numba.libs through auditwheel); no SuiteSparse: UMFPACK is the
+      # user's library, absent here as on the Windows runner (its cells skip
+      # by name)
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         timeout-minutes: 10
@@ -372,7 +413,9 @@ jobs:
           cd /tmp/test_dir
           KMP_DUPLICATE_LIB_OK=TRUE python run_tests.py
           # the wheel's contents (no cache files, the version, the three
-          # extensions, no SuiteSparse library), tests/test_sn6_wheel.py
+          # extensions, no SuiteSparse library; every library in
+          # sparse_numba.libs with its licence text, none on macOS),
+          # tests/test_sn6_wheel.py
           python -m pip install pytest
           cp -r "$GITHUB_WORKSPACE/tests" /tmp/test_dir/tests
           SPARSE_NUMBA_WHEEL=$(ls "$GITHUB_WORKSPACE"/wheelhouse/sparse_numba-*-cp${PYTHON_VERSION_NO_DOT}-*.whl | head -n 1) \

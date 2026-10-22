@@ -522,6 +522,9 @@ elif IS_LINUX:
         'sparse_umfpack/*.so',
         'sparse_umfpack/cy_umfpack_wrapper*.so',  # More specific pattern
         'sparse_eigen/cy_eigen_wrapper*.so',
+        # the licence texts of the libraries auditwheel bundles, copied from
+        # the manylinux image by build_wheels.yml (absent in a source tree)
+        'third_party_licenses/linux/*/*',
         'conversion/*.py'
     ]
 elif IS_MACOS:
