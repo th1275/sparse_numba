@@ -76,6 +76,10 @@ backend table and the measured numbers.
   (numba 0.61, the first numba with Python 3.13, needs 3.10); requires
   numba >= 0.61 and numpy >= 1.24; wheels cp310 - cp313 (0.1.11's were
   cp39 - cp312).
+- The Linux wheels are manylinux_2_28 (0.1.11's were manylinux2014):
+  they need glibc >= 2.28 (Ubuntu 18.10+, Debian 10+, RHEL / AlmaLinux /
+  Rocky 8+). Current numpy publishes no manylinux2014 wheels to build
+  against; on an older glibc pip falls back to the sdist.
 - The Eigen extension's licence text ships beside it in the wheel
   (sparse_numba/sparse_eigen/COPYING.MPL2 and COPYING.README, Eigen
   3.4.0's own files).

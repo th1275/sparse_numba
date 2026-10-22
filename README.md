@@ -10,6 +10,18 @@ inside `@njit(nogil=True)` code and keeps its numba cache across processes.
 - What 0.2.0 adds and changes over 0.1.11:
   [the release notes](docs/RELEASE_NOTES_0.2.0.md).
 
+**0.2.0 vs 0.1.11 at a glance** (the largest test matrix, n = 20698; one
+machine; details and every size in [Performance](#performance-the-comparison-record)):
+
+- Solve: 3969 us in 0.1.11 (SuperLU, NATURAL only) -> 1426 us with the new
+  ordering choice (SuperLU COLAMD, 2.8x) and 755 us with the new Eigen
+  backend (Eigen LU COLAMD, 5.3x); SuperLU NATURAL stays bit-identical.
+- Factorize: 68961 us -> 16450 us (SuperLU COLAMD, 4.2x) and 12585 us (Eigen
+  LU COLAMD, 5.5x); the new `refactorize` re-factors the same pattern in
+  10138 us (SuperLU COLAMD).
+- Overhead of the numba wrapper against a direct C++ call: within the
+  run-to-run spread at every size (ratios 0.8 to 1.2 on the large matrices).
+
 [![PyPI version](https://badge.fury.io/py/sparse-numba.svg)](https://badge.fury.io/py/sparse-numba)
 [![Build Status](https://github.com/th1275/sparse_numba/actions/workflows/build_wheels.yml/badge.svg)](https://github.com/th1275/sparse_numba/actions)
 [![Python Versions](https://img.shields.io/pypi/pyversions/sparse-numba.svg)](https://pypi.org/project/sparse-numba/)
@@ -35,11 +47,14 @@ on 0.1.11.
 | Platform | Python | Wheels | SuperLU / OpenBLAS | UMFPACK |
 |---|---|---|---|---|
 | Windows (x86_64) | 3.10 - 3.13 | yes | vendored in the wheel | the user's SuiteSparse |
-| Linux (x86_64, manylinux) | 3.10 - 3.13 | yes | the system's (libsuperlu, libopenblas) | the user's SuiteSparse |
+| Linux (x86_64, manylinux_2_28: glibc >= 2.28) | 3.10 - 3.13 | yes | the system's (libsuperlu, libopenblas) | the user's SuiteSparse |
 | macOS (Apple Silicon) | 3.10 - 3.13 | yes | Homebrew's (superlu, openblas) | the user's SuiteSparse |
 | macOS (Intel) | 3.10 - 3.13 | build from source | Homebrew's | the user's SuiteSparse |
 
 Intel Mac users: `pip install sparse-numba --no-binary=sparse-numba`.
+The Linux wheels are manylinux_2_28: they need glibc >= 2.28 (e.g.
+Ubuntu 18.10+, Debian 10+, RHEL / AlmaLinux / Rocky 8+); on an older
+glibc pip builds from the sdist (section "Building from source").
 
 ### UMFPACK: bring your own SuiteSparse
 

@@ -158,15 +158,21 @@ jobs:
             CFLAGS='-O3'
             CXXFLAGS='-O3'
             MACOSX_DEPLOYMENT_TARGET=14.0
-          CIBW_MANYLINUX_X86_64_IMAGE: manylinux2014
+          # manylinux_2_28 (AlmaLinux 8, glibc >= 2.28): current numpy ships
+          # no manylinux2014 wheels, so CIBW_BEFORE_BUILD's pip install
+          # would build numpy from source there (and fails)
+          CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
           # suitesparse-devel for umfpack.h only: the UMFPACK extension links
           # no SuiteSparse library, so auditwheel has none to bundle (the
-          # check after the build asserts it)
+          # check after the build asserts it). AlmaLinux 8: openblas-devel
+          # and suitesparse-devel are in powertools, SuperLU-devel in EPEL
           CIBW_BEFORE_ALL_LINUX: |
-            yum install -y epel-release || true
-            yum install -y openblas-devel SuperLU-devel suitesparse-devel ||
-            yum install -y openblas-devel superlu-devel suitesparse-devel ||
-            (apt-get update && apt-get install -y libsuitesparse-dev libsuperlu-dev libopenblas-dev)
+            set -e
+            dnf install -y dnf-plugins-core epel-release
+            dnf config-manager --set-enabled powertools || dnf config-manager --set-enabled crb
+            dnf install -y openblas-devel suitesparse-devel
+            dnf install -y SuperLU-devel || dnf install -y superlu-devel
+            find /usr/include -name umfpack.h || echo "umfpack.h not found"
             find /usr -name "slu_ddefs.h" || echo "SuperLU headers not found"
             HEADER_PATH=$(find /usr -name "slu_ddefs.h" | head -1)
             if [ -n "$HEADER_PATH" ]; then
@@ -187,6 +193,13 @@ jobs:
           # just like Linux relies on system libs without bundling
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: >
             cp {wheel} {dest_dir}/
+          # Skip delvewheel on Windows: the wheel already vendors the seven
+          # DLLs its extensions import (sparse_numba/vendor/*/bin, with their
+          # licences; found at import through os.add_dll_directory). A
+          # repair with a search path would copy them a second time into
+          # sparse_numba.libs; tests/test_sn6_wheel.py checks the set
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: >
+            python -c "import shutil, sys; shutil.copy(sys.argv[1], sys.argv[2])" {wheel} {dest_dir}
           CIBW_ARCHS_WINDOWS: 'AMD64'
           CIBW_ENVIRONMENT_WINDOWS: >
             CI=true

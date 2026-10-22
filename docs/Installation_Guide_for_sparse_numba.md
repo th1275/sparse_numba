@@ -21,12 +21,16 @@ pip install sparse-numba
 | platform | wheel | SuperLU / OpenBLAS | Eigen | UMFPACK |
 |---|---|---|---|---|
 | Windows x86_64 | yes | in the wheel | compiled in | the user's SuiteSparse (section 3) |
-| Linux x86_64 (manylinux) | yes | the system's: `sudo apt-get install libsuperlu-dev libopenblas-dev` (Debian / Ubuntu) | compiled in | the user's SuiteSparse |
+| Linux x86_64 (manylinux_2_28: glibc >= 2.28) | yes | the system's: `sudo apt-get install libsuperlu-dev libopenblas-dev` (Debian / Ubuntu) | compiled in | the user's SuiteSparse |
 | macOS arm64 | yes | Homebrew's: `brew install superlu openblas` | compiled in | the user's SuiteSparse |
 | macOS x86_64 (Intel) | no: build from source (section 4) | Homebrew's | compiled in | the user's SuiteSparse |
 
 SuperLU and the two Eigen backends work without anything else. UMFPACK is
 optional.
+
+The Linux wheels need glibc >= 2.28 (Ubuntu 18.10+, Debian 10+, RHEL /
+AlmaLinux / Rocky 8+); on an older glibc pip builds from the sdist
+(section 4).
 
 ## 3 UMFPACK: bring your own SuiteSparse
 
