@@ -1,5 +1,20 @@
 """
 Python Interface with UMFPACK sparse linear solver
+
+The 0.1.11 names, kept with their positional signatures and return shapes
+as thin njit shims over sparse_numba.api at AMD (the 0.1.11 factorization:
+UMFPACK's default ordering under STRATEGY_SYMMETRIC, pivot tolerance 1.0).
+They return the status codes of sparse_numba.errors and never print.
+
+UMFPACK is interface-only: the extension has no link-time SuiteSparse; the
+user's library is loaded at the first call (SPARSE_NUMBA_UMFPACK_LIBRARY, a
+path, when set; else the platform's library names), and every call returns
+BACKEND_ABSENT while it is not found.
+
+THE CODES CONTRACT (the info of every call): 0 success; a negative code a
+refusal or a backend error, by name in sparse_numba.errors (explain(info)
+says it in words); a positive k SINGULAR, the zero pivot's 1-based index.
+`info != 0` is failure, as at 0.1.11.
 """
 
 
@@ -15,11 +30,31 @@ from numba import njit, types
 from numba.extending import get_cython_function_address
 import ctypes
 
-# Load the UMFPACK wrapper function
-addr = get_cython_function_address("sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
-                                   "cy_solve_sparse_system")
-# addr = get_cython_function_address("cy_umfpack_wrapper",
-#                                    "cy_solve_sparse_system")
+from sparse_numba import _symbols
+from sparse_numba.api import (
+    UMFPACK, AMD, BAD_INDEX, solve as _solve, _factorize_on, _solve_into_on, _free_on,
+)
+from sparse_numba.conversion.matrix_conversion_numba import convert_coo_to_csc, convert_csr_to_csc
+
+_MODULE = "sparse_numba.sparse_umfpack.cy_umfpack_wrapper"
+
+# Every row of this backend registered at import under its stable name,
+# each address resolved by module name; an absent extension's rows at
+# stubs returning BACKEND_ABSENT. The c_* names are the ExternalFunction
+# objects; the functype_* ctypes function types are kept as the declared
+# signatures (data for callers' tests, never called)
+_PRESENT = _symbols.register_backend(_MODULE)
+
+
+def _address(cdef_name):
+    return get_cython_function_address(_MODULE, cdef_name) if _PRESENT else None
+
+
+def _function(name):
+    return types.ExternalFunction(name, _symbols.declared(name))
+
+
+addr = _address("cy_solve_sparse_system")
 functype = ctypes.CFUNCTYPE(
     ctypes.c_int,  # Return type: status code
     ctypes.c_void_p,  # values array
@@ -31,7 +66,7 @@ functype = ctypes.CFUNCTYPE(
     ctypes.c_void_p,  # RHS array
     ctypes.c_void_p  # Solution array (output)
 )
-c_solve_sparse_system = functype(addr)
+c_solve_sparse_system = _function("sparse_numba_umfpack_solve_sparse_system")
 
 __all__ = [
     'umfpack_solve_csc', 'umfpack_solve_coo', 'umfpack_solve_csr',
@@ -40,125 +75,87 @@ __all__ = [
 ]
 
 
-@njit(nogil=True)
+@njit(nogil=True, cache=True)
 def umfpack_solve_csc(csc_data, csc_indices, csc_indptr, b):
     """
     Solve a sparse linear system Ax = b using UMFPACK.
     Matrix A is in CSC format.
+
+    Parameters:
+    -----------
+    csc_data : ndarray
+        Nonzero values in CSC format
+    csc_indices : ndarray
+        Row indices in CSC format
+    csc_indptr : ndarray
+        Column pointers in CSC format
+    b : ndarray
+        Right-hand side vector
+
+    Returns:
+    --------
+    x : ndarray
+        Solution vector
+    info : int
+        Status code (0 for success; sparse_numba.explain(info) names it)
     """
-    # Create contiguous copies with correct data types
     data = np.ascontiguousarray(csc_data)
     indices = np.ascontiguousarray(csc_indices)
     indptr = np.ascontiguousarray(csc_indptr)
     rhs = np.ascontiguousarray(b)
+    return _solve(data, indices, indptr, len(indptr) - 1, rhs, UMFPACK, AMD)
 
-    n_rows = len(rhs)
-    n_cols = len(indptr) - 1
-    nnz = len(data)
 
-    # print(f"Debug: Matrix size: {n_rows}x{n_cols}, NNZ: {nnz}")
-    # print(f"Debug: First few values: {data[:min(5, len(data))]}")
-    # print(f"Debug: First few indices: {indices[:min(5, len(indices))]}")
-    # print(f"Debug: First few indptr: {indptr[:min(5, len(indptr))]}")
-
-    # Validate CSC format
-    if indptr[0] != 0:
-        print(f"Error: First element of indptr must be 0, got {indptr[0]}")
-        return np.zeros_like(rhs), -1
-
-    if indptr[n_cols] != nnz:
-        print(f"Error: Last element of indptr must be {nnz}, got {indptr[n_cols]}")
-        return np.zeros_like(rhs), -2
-
-    # CRITICAL: Ensure solution array is properly allocated
-    # - Must be contiguous
-    # - Must be initialized to zeros
-    # - Must be the right size and type
-    solution = np.zeros(n_rows, dtype=np.float64)
-
-    # # Double-check solution array
-    # print(f"Debug: Solution array shape: {solution.shape}, dtype: {solution.dtype}")
-    # print(f"Debug: Solution array is contiguous: {solution.flags.c_contiguous}")
-
-    # Explicitly create a new array for the result
-    # This can help with some memory alignment issues
-    result = np.zeros(n_rows, dtype=np.float64)
-
-    # Call the C function
-    info = c_solve_sparse_system(
-        data.ctypes.data,
-        indices.ctypes.data,
-        indptr.ctypes.data,
-        n_rows,
-        n_cols,
-        nnz,
-        rhs.ctypes.data,
-        result.ctypes.data  # Use our new array here
-    )
-
-    return result, info
-
-# Import conversion functions
-from sparse_numba.conversion.matrix_conversion_numba import convert_coo_to_csc, convert_csr_to_csc
-# from . import convert_coo_to_csc, convert_csr_to_csc
-
-@njit(nogil=True)
+@njit(nogil=True, cache=True)
 def umfpack_solve_coo(row_indices, col_indices, data, shape, b):
     """
     Solve a sparse linear system Ax = b using UMFPACK.
     Matrix A is in COO format and will be converted to CSC.
+
+    Parameters:
+    -----------
+    row_indices : ndarray
+        Row indices for COO format
+    col_indices : ndarray
+        Column indices for COO format
+    data : ndarray
+        Nonzero values in COO format
+    shape : tuple
+        Shape of the matrix as (n_rows, n_cols)
+    b : ndarray
+        Right-hand side vector
+
+    Returns:
+    --------
+    x : ndarray
+        Solution vector
+    info : int
+        Status code (0 for success; BAD_INDEX for an index outside the shape)
     """
     n_rows, n_cols = shape
 
     # Check for invalid indices
-    if np.any(row_indices < 0) or np.any(row_indices >= n_rows):
-        print(f"Error: Invalid row indices. Min: {row_indices.min()}, Max: {row_indices.max()}, Rows: {n_rows}")
-        return np.zeros_like(b), -1
-
-    if np.any(col_indices < 0) or np.any(col_indices >= n_cols):
-        print(f"Error: Invalid column indices. Min: {col_indices.min()}, Max: {col_indices.max()}, Cols: {n_cols}")
-        return np.zeros_like(b), -2
-
-    # Ensure correct data types
-    data_f64 = np.ascontiguousarray(data)
-    row_indices_i32 = np.ascontiguousarray(row_indices)
-    col_indices_i32 = np.ascontiguousarray(col_indices)
-    b_f64 = np.ascontiguousarray(b)
-
-    # # Debug messages
-    # print(f"COO Debug: Matrix size: {n_rows}x{n_cols}, NNZ: {len(data_f64)}")
-    # print(f"COO Debug: Row indices range: [{row_indices_i32.min()}, {row_indices_i32.max()}]")
-    # print(f"COO Debug: Col indices range: [{col_indices_i32.min()}, {col_indices_i32.max()}]")
+    if np.any(row_indices < 0) or np.any(row_indices >= n_rows) \
+            or np.any(col_indices < 0) or np.any(col_indices >= n_cols):
+        return np.zeros(len(b)), np.int64(BAD_INDEX)
 
     # Convert COO to CSC
     csc_data, csc_indices, csc_indptr = convert_coo_to_csc(
-        row_indices_i32, col_indices_i32, data_f64, n_rows, n_cols
+        np.ascontiguousarray(row_indices), np.ascontiguousarray(col_indices),
+        np.ascontiguousarray(data), n_rows, n_cols
     )
 
-    # Verify CSC format
-    if csc_indptr[0] != 0:
-        print(f"Error: First element of CSC indptr must be 0, got {csc_indptr[0]}")
-        return np.zeros_like(b_f64), -3
-
-    if csc_indptr[-1] != len(csc_data):
-        print(f"Error: Last element of CSC indptr must equal NNZ ({len(csc_data)}), got {csc_indptr[-1]}")
-        return np.zeros_like(b_f64), -4
-
-    # # Additional debugging for the CSC format
-    # print(f"CSC Debug: Converted to CSC format, NNZ: {len(csc_data)}")
-    # print(f"CSC Debug: First few indptr values: {csc_indptr[:min(5, len(csc_indptr))]}")
-    # print(f"CSC Debug: Last indptr value: {csc_indptr[-1]}")
-
     # Solve using the CSC format
-    return umfpack_solve_csc(csc_data, csc_indices, csc_indptr, b_f64)
+    return umfpack_solve_csc(csc_data, csc_indices, csc_indptr, np.ascontiguousarray(b))
 
 
-@njit(nogil=True)
+@njit(nogil=True, cache=True)
 def umfpack_solve_csr(csr_data, csr_indices, csr_indptr, b):
     """
     Solve a sparse linear system Ax = b using UMFPACK.
     Matrix A is in CSR format and will be converted to CSC.
     """
+
     # Ensure correct data types
     csr_data_f64 = csr_data.astype(np.float64)
     csr_indices_i32 = csr_indices.astype(np.int32)
@@ -178,9 +175,7 @@ def umfpack_solve_csr(csr_data, csr_indices, csr_indptr, b):
 # ================================================================
 
 # Load the factorize function
-addr_factorize = get_cython_function_address(
-    "sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
-    "cy_factorize_sparse_system")
+addr_factorize = _address("cy_factorize_sparse_system")
 functype_factorize = ctypes.CFUNCTYPE(
     ctypes.c_int,       # return: status
     ctypes.c_void_p,    # values
@@ -191,12 +186,10 @@ functype_factorize = ctypes.CFUNCTYPE(
     ctypes.c_int,       # nnz
     ctypes.c_void_p,    # handle_out (pointer to int64)
 )
-c_factorize_sparse_system = functype_factorize(addr_factorize)
+c_factorize_sparse_system = _function("sparse_numba_umfpack_factorize_csc")
 
 # Load the solve-with-factors function
-addr_solve_factored = get_cython_function_address(
-    "sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
-    "cy_solve_with_factors")
+addr_solve_factored = _address("cy_solve_with_factors")
 functype_solve_factored = ctypes.CFUNCTYPE(
     ctypes.c_int,       # return: status
     ctypes.c_int64,     # handle (int64)
@@ -204,23 +197,30 @@ functype_solve_factored = ctypes.CFUNCTYPE(
     ctypes.c_void_p,    # solution
     ctypes.c_int,       # nrhs
 )
-c_solve_with_factors = functype_solve_factored(addr_solve_factored)
+c_solve_with_factors = _function("sparse_numba_umfpack_solve_with_factors")
 
 # Load the free-factors function
-addr_free = get_cython_function_address(
-    "sparse_numba.sparse_umfpack.cy_umfpack_wrapper",
-    "cy_free_sparse_factors")
+addr_free = _address("cy_free_sparse_factors")
 functype_free = ctypes.CFUNCTYPE(
     ctypes.c_int,       # return: status
     ctypes.c_int64,     # handle
 )
-c_free_sparse_factors = functype_free(addr_free)
+c_free_sparse_factors = _function("sparse_numba_umfpack_free_factors")
+
+# the entries of the backend-neutral API (sparse_numba.api)
+c_factorize_ordered = _function("sparse_numba_umfpack_factorize_ordered")
+c_refactorize = _function("sparse_numba_umfpack_refactorize")
+c_solve_into = _function("sparse_numba_umfpack_solve_into")
+c_handle_info = _function("sparse_numba_umfpack_handle_info")
 
 
-@njit(nogil=True)
+@njit(nogil=True, cache=True)
 def umfpack_factorize_csc(csc_data, csc_indices, csc_indptr):
     """
-    Pre-factorize a sparse matrix in CSC format using UMFPACK.
+    Pre-factorize a sparse matrix in CSC format using UMFPACK, at AMD.
+
+    Deprecated through 0.2.x in favour of sparse_numba.factorize(data,
+    indices, indptr, n, UMFPACK, ordering); removed at 0.3.
 
     Parameters:
     -----------
@@ -234,7 +234,7 @@ def umfpack_factorize_csc(csc_data, csc_indices, csc_indptr):
     Returns:
     --------
     handle : int64
-        Opaque handle to the stored factors.
+        Opaque handle to the stored factors (process-local).
         Must be freed with umfpack_free_factors(handle).
     info : int
         Status code (0 for success)
@@ -242,37 +242,16 @@ def umfpack_factorize_csc(csc_data, csc_indices, csc_indptr):
     data = np.ascontiguousarray(csc_data)
     indices = np.ascontiguousarray(csc_indices)
     indptr = np.ascontiguousarray(csc_indptr)
-
-    n_cols = len(indptr) - 1
-    n_rows = n_cols  # Square matrix assumption
-    nnz = len(data)
-
-    if indptr[0] != 0:
-        print("Error: First element of indptr must be 0")
-        return np.int64(0), -1
-    if indptr[n_cols] != nnz:
-        print("Error: Last element of indptr must equal nnz")
-        return np.int64(0), -2
-
-    handle_arr = np.zeros(1, dtype=np.int64)
-
-    info = c_factorize_sparse_system(
-        data.ctypes.data,
-        indices.ctypes.data,
-        indptr.ctypes.data,
-        n_rows,
-        n_cols,
-        nnz,
-        handle_arr.ctypes.data,
-    )
-
-    return handle_arr[0], info
+    return _factorize_on(UMFPACK, data, indices, indptr, len(indptr) - 1, AMD)
 
 
-@njit(nogil=True)
+@njit(nogil=True, cache=True)
 def umfpack_solve_factored(handle, b):
     """
     Solve A*x = b using pre-computed factors from umfpack_factorize_*().
+
+    Deprecated through 0.2.x (it allocates x) in favour of
+    sparse_numba.solve_into(handle, b, out); removed at 0.3.
 
     Parameters:
     -----------
@@ -286,26 +265,25 @@ def umfpack_solve_factored(handle, b):
     x : ndarray (float64)
         Solution vector
     info : int
-        Status code (0 for success)
+        Status code (0 for success; HANDLE_FREED after a free,
+        HANDLE_WRONG_BACKEND for another backend's handle)
     """
     rhs = np.ascontiguousarray(b)
-    n = len(rhs)
-    result = np.zeros(n, dtype=np.float64)
-
-    info = c_solve_with_factors(
-        handle,
-        rhs.ctypes.data,
-        result.ctypes.data,
-        1,
-    )
-
+    result = np.zeros(len(rhs), dtype=np.float64)
+    info = _solve_into_on(UMFPACK, handle, rhs, result)
     return result, info
 
 
-@njit(nogil=True)
+@njit(nogil=True, cache=True)
 def umfpack_free_factors(handle):
     """
     Free memory associated with UMFPACK factors.
+
+    Must be called when the handle is no longer needed to avoid memory leaks.
+    A second free of the same handle returns HANDLE_FREED.
+
+    Deprecated through 0.2.x in favour of sparse_numba.free(handle); removed
+    at 0.3.
 
     Parameters:
     -----------
@@ -317,27 +295,35 @@ def umfpack_free_factors(handle):
     info : int
         Status code (0 for success)
     """
-    info = c_free_sparse_factors(handle)
-    return info
+    return _free_on(UMFPACK, handle)
 
 
-@njit(nogil=True)
+@njit(nogil=True, cache=True)
 def umfpack_factorize_coo(row_indices, col_indices, data, shape):
     """
     Pre-factorize a sparse matrix in COO format using UMFPACK.
     Converts to CSC internally, then factorizes.
 
+    Deprecated through 0.2.x in favour of sparse_numba.factorize(...,
+    ordering); removed at 0.3.
+
     Parameters:
     -----------
     row_indices : ndarray (int32)
+        Row indices for COO format
     col_indices : ndarray (int32)
+        Column indices for COO format
     data : ndarray (float64)
-    shape : tuple (n_rows, n_cols)
+        Nonzero values in COO format
+    shape : tuple
+        Shape of the matrix as (n_rows, n_cols)
 
     Returns:
     --------
     handle : int64
+        Opaque handle to the stored factors
     info : int
+        Status code (0 for success)
     """
     n_rows, n_cols = shape
 
@@ -345,6 +331,7 @@ def umfpack_factorize_coo(row_indices, col_indices, data, shape):
     row_indices_i32 = np.ascontiguousarray(row_indices)
     col_indices_i32 = np.ascontiguousarray(col_indices)
 
+    # Convert COO to CSC
     csc_data, csc_indices, csc_indptr = convert_coo_to_csc(
         row_indices_i32, col_indices_i32, data_f64, n_rows, n_cols
     )
@@ -352,27 +339,36 @@ def umfpack_factorize_coo(row_indices, col_indices, data, shape):
     return umfpack_factorize_csc(csc_data, csc_indices, csc_indptr)
 
 
-@njit(nogil=True)
+@njit(nogil=True, cache=True)
 def umfpack_factorize_csr(csr_data, csr_indices, csr_indptr):
     """
     Pre-factorize a sparse matrix in CSR format using UMFPACK.
     Converts to CSC internally, then factorizes.
 
+    Deprecated through 0.2.x in favour of sparse_numba.factorize(...,
+    ordering); removed at 0.3.
+
     Parameters:
     -----------
     csr_data : ndarray (float64)
+        Nonzero values in CSR format
     csr_indices : ndarray (int32)
+        Column indices in CSR format
     csr_indptr : ndarray (int32)
+        Row pointers in CSR format
 
     Returns:
     --------
     handle : int64
+        Opaque handle to the stored factors
     info : int
+        Status code (0 for success)
     """
     csr_data_f64 = csr_data.astype(np.float64)
     csr_indices_i32 = csr_indices.astype(np.int32)
     csr_indptr_i32 = csr_indptr.astype(np.int32)
 
+    # Convert CSR to CSC
     csc_data, csc_indices, csc_indptr = convert_csr_to_csc(
         csr_data_f64, csr_indices_i32, csr_indptr_i32
     )

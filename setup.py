@@ -1,4 +1,5 @@
 import os
+import shlex
 import sys
 import platform
 from setuptools import setup, find_packages, Extension
@@ -10,6 +11,14 @@ from distutils.errors import CompileError
 
 # Detect if we're in a CI environment
 CI_BUILD = os.environ.get('CI', '') == 'true' or os.environ.get('GITHUB_ACTIONS', '') == 'true'
+
+# THE DEBUG SWITCH: every extension is compiled with
+# -DNDEBUG on every platform (the release default); SPARSE_NUMBA_DEBUG set
+# to a non-empty value other than 0 / false / no at the build leaves it out,
+# so the asserts (Eigen's eigen_assert among them) stay on for development.
+# Never set for a wheel.
+DEBUG_BUILD = os.environ.get('SPARSE_NUMBA_DEBUG', '').strip().lower() not in ('', '0', 'false', 'no')
+NDEBUG = [] if DEBUG_BUILD else ["-DNDEBUG"]
 
 # Determine the platform
 PLATFORM = platform.system()
@@ -59,7 +68,10 @@ if IS_WINDOWS:
     extra_compile_args = ["-O3"]
     if struct.calcsize("P") == 8:
         extra_compile_args.append("-DMS_WIN64")
-    extra_link_args = []
+    extra_compile_args += NDEBUG
+    # MinGW: no link timestamp in the PE header, so a rebuild of unchanged
+    # source gives the same extension bytes (and the same cache_key())
+    extra_link_args = ["-Wl,--no-insert-timestamp"]
 elif IS_LINUX:
     # On Linux, we'll use system libraries if available
     # Try to locate SuperLU headers dynamically
@@ -128,7 +140,7 @@ elif IS_LINUX:
         umfpack_libraries.append("blas")
         superlu_libraries.append("blas")
 
-    extra_compile_args = ["-O3", "-fPIC"]
+    extra_compile_args = ["-O3", "-fPIC"] + NDEBUG
     extra_link_args = []
 elif IS_MACOS:
     # On macOS, check both system locations and Homebrew/MacPorts locations
@@ -199,7 +211,7 @@ elif IS_MACOS:
     superlu_libraries = ["superlu", "openblas"]
 
     # For macOS, ensure we're building for the right architecture
-    extra_compile_args = ["-O3", "-fPIC"]
+    extra_compile_args = ["-O3", "-fPIC"] + NDEBUG
     extra_link_args = [f"-L{openblas_prefix}/lib", "-lopenblas"]
 
     if home_openblas_lib:
@@ -216,6 +228,22 @@ elif IS_MACOS:
 else:
     raise RuntimeError(f"Unsupported platform: {PLATFORM}")
 
+# The compile flags: one list for every extension. Its
+# text is compiled into each shim's build facts as SN_BUILD_FLAGS
+# (sparse_numba_registry.h) and so named by cache_key(). SPARSE_NUMBA_EXTRA_
+# CFLAGS (shlex-split; unset = nothing) is appended for a comparison build
+# (e.g. -march=native); the wheel never sets it
+compile_flags = list(extra_compile_args) + shlex.split(
+    os.environ.get("SPARSE_NUMBA_EXTRA_CFLAGS", ""))
+
+
+def with_build_flags(flags):
+    """flags plus -DSN_BUILD_FLAGS="<their text>" (no shell: the compiler
+    gets the argument as one string)."""
+    text = " ".join(flags).replace("\\", "\\\\").replace('"', '\\"')
+    return list(flags) + ['-DSN_BUILD_FLAGS="%s"' % text]
+
+
 # Print configuration for debugging
 print("\n=== Build Configuration ===")
 print(f"Platform: {PLATFORM}")
@@ -223,8 +251,9 @@ print(f"Include directories: {include_dirs}")
 print(f"Library directories: {library_dirs}")
 print(f"UMFPACK libraries: {umfpack_libraries}")
 print(f"SuperLU libraries: {superlu_libraries}")
-print(f"Extra compile args: {extra_compile_args}")
+print(f"Extra compile args: {compile_flags}")
 print(f"Extra link args: {extra_link_args}")
+print(f"Debug build (SPARSE_NUMBA_DEBUG, no -DNDEBUG): {DEBUG_BUILD}")
 print(f"CI Build: {CI_BUILD}")
 print("===========================\n")
 
@@ -242,9 +271,12 @@ if not SKIP_UMFPACK:
                 "sparse_numba/sparse_umfpack/umfpack_wrapper.c"
             ],
             include_dirs=include_dirs,
-            libraries=umfpack_libraries,
-            library_dirs=library_dirs,
-            extra_compile_args=extra_compile_args,
+            # interface-only: no SuiteSparse at link
+            # time; the user's library is loaded at runtime by name (dlopen
+            # lives in libdl on glibc before 2.34)
+            libraries=["dl"] if IS_LINUX else [],
+            library_dirs=[],
+            extra_compile_args=with_build_flags(compile_flags),
             extra_link_args=extra_link_args,
         )
     )
@@ -262,13 +294,46 @@ extensions.append(
         include_dirs=include_dirs,
         libraries=superlu_libraries,
         library_dirs=library_dirs,
-        extra_compile_args=extra_compile_args,
+        extra_compile_args=with_build_flags(compile_flags),
         extra_link_args=extra_link_args,
+    )
+)
+
+# Eigen extension (always built): the Eigen 3.4.0
+# headers compiled in from third_party/eigen-3.4.0 (pinned by its
+# SHA256SUMS), C++17, the shared compile flags plus -DEIGEN_MPL2_ONLY (a
+# non-MPL2 Eigen header is a build error) and
+# -DEIGEN_DONT_PARALLELIZE; no library to link (no BLAS)
+eigen_compile_flags = compile_flags + ["-std=c++17", "-DEIGEN_MPL2_ONLY",
+                                       "-DEIGEN_DONT_PARALLELIZE"]
+if IS_WINDOWS:
+    # MinGW: the C++ runtime linked in, so the pyd imports no libstdc++ /
+    # libgcc DLL
+    eigen_link_args = extra_link_args + ["-static-libstdc++", "-static-libgcc"]
+else:
+    # Linux / macOS (written, not built on the box): the platform's C++
+    # runtime, the architecture flags only
+    eigen_link_args = [arg for arg in extra_link_args if arg.startswith("-arch")]
+extensions.append(
+    Extension(
+        "sparse_numba.sparse_eigen.cy_eigen_wrapper",
+        sources=[
+            "sparse_numba/sparse_eigen/cy_eigen_wrapper.pyx",
+            "sparse_numba/sparse_eigen/eigen_wrapper.cpp"
+        ],
+        include_dirs=include_dirs + ["sparse_numba/sparse_eigen", "third_party/eigen-3.4.0"],
+        language="c++",
+        extra_compile_args=with_build_flags(eigen_compile_flags),
+        extra_link_args=eigen_link_args,
     )
 )
 
 
 # Customize the build process
+# Eigen's licence files, beside the Eigen extension in the wheel
+EIGEN_LICENCE_FILES = ("COPYING.MPL2", "COPYING.README")
+
+
 class CustomBuildExt(build_ext):
     def finalize_options(self):
         build_ext.finalize_options(self)
@@ -335,6 +400,18 @@ class CustomBuildExt(build_ext):
                 print(f"[FAIL] {ext.name} FAILED TO BUILD (expected at {ext_path})")
         print("=" * 80 + "\n")
 
+        # Eigen is compiled into its extension: its licence text (MPL-2.0)
+        # goes beside the extension in the wheel, copied byte for byte from
+        # third_party/eigen-3.4.0 (not into the source tree at --inplace)
+        if not self.inplace:
+            eigen_dir = os.path.dirname(self.get_ext_fullpath("sparse_numba.sparse_eigen.cy_eigen_wrapper"))
+            os.makedirs(eigen_dir, exist_ok=True)
+            import shutil
+            for licence in EIGEN_LICENCE_FILES:
+                shutil.copyfile(os.path.join("third_party", "eigen-3.4.0", licence),
+                                os.path.join(eigen_dir, licence))
+                print(f"Copied the Eigen licence {licence} to {eigen_dir}")
+
         # Get extension paths for all platforms
         ext_path_umfpack = self.get_ext_fullpath("sparse_numba.sparse_umfpack.cy_umfpack_wrapper")
         ext_path_superlu = self.get_ext_fullpath("sparse_numba.sparse_superlu.cy_superlu_wrapper")
@@ -367,10 +444,11 @@ class CustomBuildExt(build_ext):
 
             import shutil
 
-            # Copy OpenBLAS DLLs
+            # Copy the OpenBLAS DLL and its licence files (the licence
+            # beside each vendored DLL)
             if os.path.exists(openblas_bin_dir):
                 for dll_file in os.listdir(openblas_bin_dir):
-                    if dll_file.endswith('.dll'):
+                    if dll_file.endswith('.dll') or dll_file.startswith('LICENSE.'):
                         dest_path = os.path.join(openblas_target_dir, dll_file)
                         shutil.copy(
                             os.path.join(openblas_bin_dir, dll_file),
@@ -378,10 +456,10 @@ class CustomBuildExt(build_ext):
                         )
                         print(f"Copied OpenBLAS DLL: {dll_file} to {dest_path}")
 
-            # Copy SuperLU DLLs
+            # Copy the SuperLU link chain's DLLs and their licence files
             if os.path.exists(superlu_bin_dir):
                 for dll_file in os.listdir(superlu_bin_dir):
-                    if dll_file.endswith('.dll'):
+                    if dll_file.endswith('.dll') or dll_file.startswith('LICENSE.'):
                         dest_path = os.path.join(superlu_target_dir, dll_file)
                         shutil.copy(
                             os.path.join(superlu_bin_dir, dll_file),
@@ -429,9 +507,12 @@ package_data = {
 if IS_WINDOWS:
     package_data['sparse_numba'] = [
         'vendor/superlu/bin/*.dll',
+        'vendor/superlu/bin/LICENSE.*',
         'vendor/openblas/bin/*.dll',
+        'vendor/openblas/bin/LICENSE.*',
         'sparse_superlu/*.pyd',
         'sparse_umfpack/*.pyd',
+        'sparse_eigen/*.pyd',
         'sparse_superlu/test/*.py',
         'sparse_umfpack/test/*.py',
         'conversion/*.py'
@@ -442,6 +523,7 @@ elif IS_LINUX:
         'sparse_superlu/cy_superlu_wrapper*.so',  # More specific pattern
         'sparse_umfpack/*.so',
         'sparse_umfpack/cy_umfpack_wrapper*.so',  # More specific pattern
+        'sparse_eigen/cy_eigen_wrapper*.so',
         'sparse_superlu/test/*.py',
         'sparse_umfpack/test/*.py',
         'conversion/*.py'
@@ -452,6 +534,7 @@ elif IS_MACOS:
         'sparse_superlu/*.dylib',
         'sparse_umfpack/*.so',
         'sparse_umfpack/*.dylib',
+        'sparse_eigen/*.so',
         'sparse_superlu/test/*.py',
         'sparse_umfpack/test/*.py',
         'conversion/*.py'
@@ -465,13 +548,14 @@ packages=[
         'sparse_numba.sparse_superlu.test',
         'sparse_numba.sparse_umfpack',
         'sparse_numba.sparse_umfpack.test',
+        'sparse_numba.sparse_eigen',
     ]
 
 setup(
     name="sparse_numba",
-    version="0.1.11",
+    version="0.2.0",
     description="Customized sparse solver with Numba support",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="Tianqi Hong",
     author_email="tianqi.hong@uga.edu",
@@ -483,13 +567,20 @@ setup(
         'build_ext': CustomBuildExt,
     },
     package_data=package_data,
-    python_requires=">=3.9",
+    python_requires=">=3.10",
+    # numba 0.61 is the first numba with Python 3.13 and needs 3.10; numpy
+    # at numba 0.61's floor (pip takes a numpy with wheels for the running
+    # Python: 1.26 is the first with 3.12 wheels, 2.1 the first with 3.13's)
     install_requires=[
-        "numpy>=1.13.3",
-        "numba>=0.58.0",
+        "numpy>=1.24",
+        "numba>=0.61",
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "License :: OSI Approved :: BSD License",
         "Operating System :: Microsoft :: Windows",
         "Operating System :: POSIX :: Linux",

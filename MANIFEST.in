@@ -6,9 +6,13 @@ include sparse_numba/sparse_umfpack/*.py
 include sparse_numba/conversion/*.py
 include sparse_numba/sparse_superlu/*.py
 
-# Windows-specific
+# Windows-specific: the SuperLU / OpenBLAS link chain (the DLLs the
+# extensions import, and only those; libsuperlu_fortran-7 out at 0.2.0) and
+# the licence file of each DLL beside it
 include vendor/openblas/bin/*.dll
+include vendor/openblas/bin/LICENSE.*
 include vendor/superlu/bin/*.dll
+include vendor/superlu/bin/LICENSE.*
 
 # Linux-specific
 include vendor/openblas/lib/*.so
@@ -36,3 +40,6 @@ exclude vendor/suitesparse/bin/*.dll
 exclude sparse_numba/sparse_superlu/*.c
 exclude sparse_numba/sparse_superlu/*.h
 exclude sparse_numba/sparse_superlu/*.pyx
+
+# No cache files in any wheel or sdist
+global-exclude __pycache__ *.py[cod] *.nbi *.nbc

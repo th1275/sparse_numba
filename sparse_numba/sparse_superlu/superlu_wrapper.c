@@ -2,36 +2,65 @@
 
 // File name: superlu_wrapper.c
 //
+// Every function returns a status code of sparse_numba_codes.h and never
+// prints (the debug messages compile in under SPARSE_NUMBA_DEBUG only).
+// A handle is an index into this module's registry (sparse_numba_registry.h).
 #include "superlu_wrapper.h"
-#include <stdio.h>
+#include "../sparse_numba_codes.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include <float.h>  /* For DBL_MAX */
 #include <slu_ddefs.h>  /* SuperLU header */
 
+#ifdef SPARSE_NUMBA_DEBUG
+#include <stdio.h>
 #define DEBUG_PRINT(fmt, ...) printf("[SuperLU Debug] " fmt "\n", ##__VA_ARGS__)
+#else
+#define DEBUG_PRINT(fmt, ...) ((void)0)
+#endif
+
+#define SN_THIS_BACKEND SN_BACKEND_SUPERLU
+#define SN_REGISTRY_FIRST SN_THIS_BACKEND
+#define SN_REGISTRY_LAST SN_THIS_BACKEND
+#include "../sparse_numba_registry.h"  /* the handle registry */
+
+
+/* dgstrf / dgssv's info as a status code */
+static int slu_code(int info, int n) {
+    if (info == 0) return SN_OK;
+    if (info < 0) {
+        DEBUG_PRINT("SuperLU: Argument %d had an illegal value", -info);
+        return SN_BACKEND_ERROR;
+    }
+    if (info <= n) {
+        DEBUG_PRINT("SuperLU: U(%d,%d) is exactly zero", info, info);
+        return info;  /* SINGULAR = k */
+    }
+    DEBUG_PRINT("SuperLU: Memory allocation failed: %d", info - n);
+    return SN_ALLOC_FAILED;
+}
+
 
 int solve_sparse_system(double *values, int *rowind, int *colptr,
                         int nrows, int ncols, int nnz,
                         double *rhs, double *solution) {
-//    DEBUG_PRINT("Starting solve_sparse_system with matrix %dx%d, NNZ: %d", nrows, ncols, nnz);
 
     /* Input validation */
     if (!values || !rowind || !colptr || !rhs || !solution) {
         DEBUG_PRINT("Error: NULL pointer passed to solve_sparse_system");
-        return -1;
+        return SN_BAD_SHAPE;
     }
 
     if (nrows <= 0 || ncols <= 0 || nnz <= 0) {
         DEBUG_PRINT("Error: Invalid dimensions: rows=%d, cols=%d, nnz=%d", nrows, ncols, nnz);
-        return -2;
+        return SN_BAD_SHAPE;
     }
 
     if (colptr[0] != 0 || colptr[ncols] != nnz) {
         DEBUG_PRINT("Error: Invalid CSC format - colptr[0]=%d, colptr[%d]=%d, nnz=%d",
                     colptr[0], ncols, colptr[ncols], nnz);
-        return -3;
+        return SN_BAD_INDPTR;
     }
 
     /* Initialize all pointers to NULL for safe cleanup */
@@ -49,35 +78,31 @@ int solve_sparse_system(double *values, int *rowind, int *colptr,
     int *colptr_copy = NULL;
     double *rhs_copy = NULL;
 
-    int status = -99;
+    int status = SN_ALLOC_FAILED;
     int info = 0;
 
     /* Allocate everything */
-    A = (SuperMatrix*)malloc(sizeof(SuperMatrix));
-    B = (SuperMatrix*)malloc(sizeof(SuperMatrix));
-    L = (SuperMatrix*)malloc(sizeof(SuperMatrix));
-    U = (SuperMatrix*)malloc(sizeof(SuperMatrix));
+    A = (SuperMatrix*)calloc(1, sizeof(SuperMatrix));  /* Store NULL */
+    B = (SuperMatrix*)calloc(1, sizeof(SuperMatrix));
+    L = (SuperMatrix*)calloc(1, sizeof(SuperMatrix));
+    U = (SuperMatrix*)calloc(1, sizeof(SuperMatrix));
     options = (superlu_options_t*)malloc(sizeof(superlu_options_t));
     stat = (SuperLUStat_t*)malloc(sizeof(SuperLUStat_t));
 
     if (!A || !B || !L || !U || !options || !stat) {
         DEBUG_PRINT("Failed to allocate SuperLU structures");
-        status = -10;
+        if (stat) free(stat);
+        stat = NULL;
         goto cleanup;
     }
-
-    /* Initialize SuperMatrix Store pointers to NULL */
-    A->Store = NULL;
-    B->Store = NULL;
-    L->Store = NULL;  /* This fixes the warning */
-    U->Store = NULL;  /* Also initialize U->Store */
 
     perm_r = (int*)malloc(nrows * sizeof(int));
     perm_c = (int*)malloc(ncols * sizeof(int));
 
     if (!perm_r || !perm_c) {
         DEBUG_PRINT("Failed to allocate permutation arrays");
-        status = -11;
+        free(stat);
+        stat = NULL;
         goto cleanup;
     }
 
@@ -89,7 +114,8 @@ int solve_sparse_system(double *values, int *rowind, int *colptr,
 
     if (!values_copy || !rowind_copy || !colptr_copy || !rhs_copy) {
         DEBUG_PRINT("Failed to allocate data arrays");
-        status = -12;
+        free(stat);
+        stat = NULL;
         goto cleanup;
     }
 
@@ -104,15 +130,12 @@ int solve_sparse_system(double *values, int *rowind, int *colptr,
         solution[i] = 0.0;
     }
 
-//    DEBUG_PRINT("Memory allocated and data copied");
-
-    /* Initialize SuperLU structures manually */
-
     /* Create A matrix */
     NCformat *Astore = (NCformat*)malloc(sizeof(NCformat));
     if (!Astore) {
         DEBUG_PRINT("Failed to allocate A.Store");
-        status = -20;
+        free(stat);
+        stat = NULL;
         goto cleanup;
     }
 
@@ -128,13 +151,12 @@ int solve_sparse_system(double *values, int *rowind, int *colptr,
     Astore->rowind = rowind_copy;
     Astore->colptr = colptr_copy;
 
-//    DEBUG_PRINT("A matrix initialized manually");
-
     /* Create B matrix */
     DNformat *Bstore = (DNformat*)malloc(sizeof(DNformat));
     if (!Bstore) {
         DEBUG_PRINT("Failed to allocate B.Store");
-        status = -21;
+        free(stat);
+        stat = NULL;
         goto cleanup;
     }
 
@@ -148,8 +170,6 @@ int solve_sparse_system(double *values, int *rowind, int *colptr,
     Bstore->lda = nrows;
     Bstore->nzval = rhs_copy;
 
-//    DEBUG_PRINT("B matrix initialized manually");
-
     /* Set options */
     set_default_options(options);
     options->ColPerm = NATURAL;
@@ -162,120 +182,69 @@ int solve_sparse_system(double *values, int *rowind, int *colptr,
     for (int i = 0; i < nrows; i++) perm_r[i] = i;
     for (int i = 0; i < ncols; i++) perm_c[i] = i;
 
-//    DEBUG_PRINT("Calling dgssv");
-
     /* Solve the system */
     dgssv(options, A, perm_c, perm_r, L, U, B, stat, &info);
 
-//    DEBUG_PRINT("dgssv returned with info = %d", info);
-
     /* Check for successful completion */
     if (info != 0) {
-        if (info < 0) {
-            DEBUG_PRINT("SuperLU: Argument %d had an illegal value", -info);
-        } else if (info <= nrows) {
-            DEBUG_PRINT("SuperLU: U(%d,%d) is exactly zero", info, info);
-        } else {
-            DEBUG_PRINT("SuperLU: Memory allocation failed: %d", info - nrows);
-        }
-        status = info;
+        status = slu_code(info, nrows);
     } else {
         /* Copy solution from B to solution array */
         double *sol_ptr = (double*)Bstore->nzval;
-//        DEBUG_PRINT("Copying solution from B to output array");
         for (int i = 0; i < nrows; i++) {
             solution[i] = sol_ptr[i];
         }
-//        DEBUG_PRINT("Solution copied successfully");
-        status = 0;
+        status = SN_OK;
     }
 
 cleanup:
-//    DEBUG_PRINT("Cleaning up resources");
-
     /* Carefully free everything in reverse order of allocation */
 
-    /* Free stat first */
+    /* Free stat first (initialized only once dgssv's inputs were built) */
     if (stat) {
         StatFree(stat);
         free(stat);
-//        DEBUG_PRINT("Freed stat");
     }
 
-    /* CRITICAL: Free L and U if they were allocated by dgssv */
+    /* Free L and U if they were allocated by dgssv */
     if (L && L->Store) {
-//        DEBUG_PRINT("Freeing L matrix");
         Destroy_SuperNode_Matrix(L);
     }
     if (L) free(L);
 
     if (U && U->Store) {
-//        DEBUG_PRINT("Freeing U matrix");
         Destroy_CompCol_Matrix(U);
     }
     if (U) free(U);
 
     /* Free B matrix - careful not to free rhs_copy until later */
     if (B && B->Store) {
-        DNformat *Bstore = (DNformat*)B->Store;
-        Bstore->nzval = NULL; /* Don't let SuperLU free our rhs_copy */
+        DNformat *Bs = (DNformat*)B->Store;
+        Bs->nzval = NULL; /* Don't let SuperLU free our rhs_copy */
         free(B->Store);
-//        DEBUG_PRINT("Freed B.Store");
     }
-    if (B) {
-        free(B);
-//        DEBUG_PRINT("Freed B");
-    }
+    if (B) free(B);
 
     /* Free A matrix - careful not to free our arrays until later */
     if (A && A->Store) {
-        NCformat *Astore = (NCformat*)A->Store;
-        Astore->nzval = NULL;   /* Don't let SuperLU free our arrays */
-        Astore->rowind = NULL;
-        Astore->colptr = NULL;
+        NCformat *As = (NCformat*)A->Store;
+        As->nzval = NULL;   /* Don't let SuperLU free our arrays */
+        As->rowind = NULL;
+        As->colptr = NULL;
         free(A->Store);
-//        DEBUG_PRINT("Freed A.Store");
     }
-    if (A) {
-        free(A);
-//        DEBUG_PRINT("Freed A");
-    }
+    if (A) free(A);
 
-    /* Free options */
-    if (options) {
-        free(options);
-//        DEBUG_PRINT("Freed options");
-    }
-
-    /* Free permutation arrays */
-    if (perm_r) {
-        free(perm_r);
-//        DEBUG_PRINT("Freed perm_r");
-    }
-    if (perm_c) {
-        free(perm_c);
-//        DEBUG_PRINT("Freed perm_c");
-    }
+    if (options) free(options);
+    if (perm_r) free(perm_r);
+    if (perm_c) free(perm_c);
 
     /* NOW free our data arrays */
-    if (values_copy) {
-        free(values_copy);
-//        DEBUG_PRINT("Freed values_copy");
-    }
-    if (rowind_copy) {
-        free(rowind_copy);
-//        DEBUG_PRINT("Freed rowind_copy");
-    }
-    if (colptr_copy) {
-        free(colptr_copy);
-//        DEBUG_PRINT("Freed colptr_copy");
-    }
-    if (rhs_copy) {
-        free(rhs_copy);
-//        DEBUG_PRINT("Freed rhs_copy");
-    }
+    if (values_copy) free(values_copy);
+    if (rowind_copy) free(rowind_copy);
+    if (colptr_copy) free(colptr_copy);
+    if (rhs_copy) free(rhs_copy);
 
-//    DEBUG_PRINT("Cleanup complete, returning status %d", status);
     return status;
 }
 
@@ -284,356 +253,374 @@ cleanup:
  * Pre-factorization API: factorize once, solve many times
  * ================================================================ */
 
-/* Struct to hold LU factors between factorize and solve calls */
+/* The factors of one handle. The CSC copies, A, the column-permuted AC
+ * over them, perm_c and the elimination tree are held for refactorize;
+ * L and U are dgstrf's. The dense right-hand side B over a held buffer of
+ * n * bcols doubles (n at factorize, grown on the first wider solve) and
+ * the SuperLUStat_t are made once at factorize and freed at free
+ * (no allocation per solve); busy guards them, so a second solve running on
+ * the same handle at the same time takes the allocating path instead. */
 typedef struct {
-    SuperMatrix *L;
-    SuperMatrix *U;
+    SuperMatrix A;
+    SuperMatrix AC;
+    SuperMatrix L;
+    SuperMatrix U;
     int *perm_r;
     int *perm_c;
-    int nrows;
-    int ncols;
+    int *etree;
+    double *values;
+    int *rowind;
+    int *colptr;
+    superlu_options_t options;
+    SuperMatrix B;
+    DNformat Bstore;
+    double *bbuf;
+    int bcols;        /* the columns bbuf holds */
+    SuperLUStat_t stat;
+    int have_stat;
+    char busy;
+    int n;
+    int nnz;
+    int ordering;
+    int have_ac;
+    int have_lu;
+    int last_status;  /* dgstrf's info of the last factorization */
+    int state;        /* SN_OK while L and U are usable for a solve */
 } superlu_factors_t;
+
+
+static void slu_destroy(superlu_factors_t *f) {
+    if (!f) return;
+    if (f->have_lu) {
+        Destroy_SuperNode_Matrix(&f->L);
+        Destroy_CompCol_Matrix(&f->U);
+    }
+    if (f->have_ac) Destroy_CompCol_Permuted(&f->AC);
+    if (f->have_stat) StatFree(&f->stat);
+    if (f->bbuf) free(f->bbuf);
+    if (f->A.Store) free(f->A.Store);  /* the arrays are ours, freed below */
+    if (f->perm_r) free(f->perm_r);
+    if (f->perm_c) free(f->perm_c);
+    if (f->etree) free(f->etree);
+    if (f->values) free(f->values);
+    if (f->rowind) free(f->rowind);
+    if (f->colptr) free(f->colptr);
+    free(f);
+}
+
+
+/* dgstrf on the held AC and the held stat: the factorization of factorize
+ * and refactorize */
+static int slu_numeric(superlu_factors_t *f) {
+    GlobalLU_t Glu;
+    int info = 0;
+    int panel_size = sp_ienv(1);
+    int relax = sp_ienv(2);
+
+    memset(&Glu, 0, sizeof(GlobalLU_t));
+    f->L.Store = NULL;
+    f->U.Store = NULL;
+    dgstrf(&f->options, &f->AC, relax, panel_size, f->etree,
+           NULL, 0,  /* work=NULL, lwork=0 => SuperLU allocates internally */
+           f->perm_c, f->perm_r, &f->L, &f->U, &Glu, &f->stat, &info);
+
+    /* a zero pivot completes the factorization; an allocation failure does not */
+    f->have_lu = (info == 0 || (info > 0 && info <= f->n)) && f->L.Store && f->U.Store;
+    f->last_status = info;
+    f->state = slu_code(info, f->n);
+    return f->state;
+}
+
+
+int factorize_sparse_system_ordered(double *values, int *rowind, int *colptr,
+                                    int n, int nnz, int ordering,
+                                    int64_t *handle_out) {
+    superlu_factors_t *f;
+    colperm_t colperm;
+    int code;
+
+    if (!handle_out) return SN_BAD_SHAPE;
+    *handle_out = 0;
+    if (!values || !rowind || !colptr) {
+        DEBUG_PRINT("Error: NULL pointer passed to factorize_sparse_system_ordered");
+        return SN_BAD_SHAPE;
+    }
+    if (n <= 0 || nnz <= 0) {
+        DEBUG_PRINT("Error: Invalid dimensions: n=%d, nnz=%d", n, nnz);
+        return SN_BAD_SHAPE;
+    }
+    if (colptr[0] != 0 || colptr[n] != nnz) {
+        DEBUG_PRINT("Error: Invalid CSC format - colptr[0]=%d, colptr[%d]=%d, nnz=%d",
+                    colptr[0], n, colptr[n], nnz);
+        return SN_BAD_INDPTR;
+    }
+
+    /* options.ColPerm from the ordering (NATURAL the 0.1.11
+     * factorization); AMD is refused (SuperLU has no AMD column
+     * ordering of its own) */
+    switch (ordering) {
+    case SN_ORDERING_NATURAL: colperm = NATURAL; break;
+    case SN_ORDERING_COLAMD: colperm = COLAMD; break;
+    case SN_ORDERING_MMD_AT_PLUS_A: colperm = MMD_AT_PLUS_A; break;
+    default: return SN_ORDERING_UNSUPPORTED;
+    }
+
+    f = (superlu_factors_t*)calloc(1, sizeof(superlu_factors_t));
+    if (!f) return SN_ALLOC_FAILED;
+    f->n = n;
+    f->nnz = nnz;
+    f->ordering = ordering;
+
+    f->perm_r = (int*)malloc(n * sizeof(int));
+    f->perm_c = (int*)malloc(n * sizeof(int));
+    f->etree = (int*)malloc(n * sizeof(int));
+    f->values = (double*)malloc(nnz * sizeof(double));
+    f->rowind = (int*)malloc(nnz * sizeof(int));
+    f->colptr = (int*)malloc((n + 1) * sizeof(int));
+    f->A.Store = malloc(sizeof(NCformat));
+    f->bbuf = (double*)malloc(n * sizeof(double));
+    f->bcols = 1;
+    if (!f->perm_r || !f->perm_c || !f->etree || !f->values || !f->rowind ||
+            !f->colptr || !f->A.Store || !f->bbuf) {
+        DEBUG_PRINT("Failed to allocate the factors");
+        slu_destroy(f);
+        return SN_ALLOC_FAILED;
+    }
+
+    memcpy(f->values, values, nnz * sizeof(double));
+    memcpy(f->rowind, rowind, nnz * sizeof(int));
+    memcpy(f->colptr, colptr, (n + 1) * sizeof(int));
+
+    /* Build SuperMatrix A in CSC (NC) format over the held copies */
+    {
+        NCformat *Astore = (NCformat*)f->A.Store;
+        f->A.Stype = SLU_NC;
+        f->A.Dtype = SLU_D;
+        f->A.Mtype = SLU_GE;
+        f->A.nrow = n;
+        f->A.ncol = n;
+        Astore->nnz = nnz;
+        Astore->nzval = f->values;
+        Astore->rowind = f->rowind;
+        Astore->colptr = f->colptr;
+    }
+
+    /* The held dense B over bbuf (lda n) */
+    f->B.Stype = SLU_DN;
+    f->B.Dtype = SLU_D;
+    f->B.Mtype = SLU_GE;
+    f->B.nrow = n;
+    f->B.ncol = 1;
+    f->B.Store = &f->Bstore;
+    f->Bstore.lda = n;
+    f->Bstore.nzval = f->bbuf;
+
+    /* Set options */
+    set_default_options(&f->options);
+    f->options.ColPerm = colperm;
+    f->options.PrintStat = NO;
+
+    /* The stat, once (freed at free) */
+    StatInit(&f->stat);
+    f->have_stat = 1;
+
+    /* Initialize permutation arrays */
+    for (int i = 0; i < n; i++) f->perm_r[i] = i;
+    for (int i = 0; i < n; i++) f->perm_c[i] = i;
+
+    /* Step 1: Column permutation */
+    get_perm_c(f->options.ColPerm, &f->A, f->perm_c);
+
+    /* Step 2: Pre-order the matrix (AC's values point at the held copy) */
+    sp_preorder(&f->options, &f->A, f->perm_c, f->etree, &f->AC);
+    f->have_ac = 1;
+
+    /* Step 3: LU factorization */
+    code = slu_numeric(f);
+    if (code != SN_OK) {
+        slu_destroy(f);
+        return code;
+    }
+
+    code = sn_register(f, SN_THIS_BACKEND, handle_out);
+    if (code != SN_OK) {
+        slu_destroy(f);
+        return code;
+    }
+    return SN_OK;
+}
 
 
 int factorize_sparse_system(double *values, int *rowind, int *colptr,
                             int nrows, int ncols, int nnz,
                             int64_t *handle_out) {
-
-    /* Input validation */
-    if (!values || !rowind || !colptr || !handle_out) {
-        DEBUG_PRINT("Error: NULL pointer passed to factorize_sparse_system");
-        return -1;
-    }
-    if (nrows <= 0 || ncols <= 0 || nnz <= 0) {
-        DEBUG_PRINT("Error: Invalid dimensions: rows=%d, cols=%d, nnz=%d", nrows, ncols, nnz);
-        return -2;
-    }
-    if (colptr[0] != 0 || colptr[ncols] != nnz) {
-        DEBUG_PRINT("Error: Invalid CSC format - colptr[0]=%d, colptr[%d]=%d, nnz=%d",
-                    colptr[0], ncols, colptr[ncols], nnz);
-        return -3;
-    }
-
+    if (!handle_out) return SN_BAD_SHAPE;
     *handle_out = 0;
+    if (nrows != ncols) return SN_NOT_SQUARE;
+    return factorize_sparse_system_ordered(values, rowind, colptr, ncols, nnz,
+                                           SN_ORDERING_NATURAL, handle_out);
+}
 
-    /* Initialize all pointers to NULL for safe cleanup */
-    SuperMatrix *A = NULL;
-    SuperMatrix *L = NULL;
-    SuperMatrix *U = NULL;
-    SuperMatrix *AC = NULL;
-    int *perm_r = NULL;
-    int *perm_c = NULL;
-    int *etree = NULL;
-    superlu_options_t *options = NULL;
-    SuperLUStat_t *stat = NULL;
-    superlu_factors_t *factors = NULL;
 
-    double *values_copy = NULL;
-    int *rowind_copy = NULL;
-    int *colptr_copy = NULL;
+int refactorize_sparse_system(int64_t handle, double *values, int nnz) {
+    void *p = NULL;
+    int code = sn_lookup(handle, &p);
+    superlu_factors_t *f = (superlu_factors_t*)p;
+    if (code != SN_OK) return code;
+    if (!values || nnz != f->nnz) return SN_BAD_SHAPE;
 
-    int status = -99;
+    memcpy(f->values, values, nnz * sizeof(double));
+    if (f->have_lu) {
+        Destroy_SuperNode_Matrix(&f->L);
+        Destroy_CompCol_Matrix(&f->U);
+        f->have_lu = 0;
+    }
+    /* the held perm_c and etree; dgstrf again on the new values */
+    f->options.Fact = SamePattern;
+    return slu_numeric(f);
+}
+
+
+/* rhs -> work (column-major, lda n) and work -> solution; rhs / solution
+ * column-major unless row_major (then (n, nrhs) C-contiguous) */
+static void slu_copy_in(double *work, const double *rhs, int n, int nrhs, int row_major) {
+    size_t count = (size_t)n * (size_t)nrhs;
+    if (row_major && nrhs > 1) {
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < nrhs; j++)
+                work[(size_t)j * n + i] = rhs[(size_t)i * nrhs + j];
+    } else {
+        memcpy(work, rhs, count * sizeof(double));
+    }
+}
+
+static void slu_copy_out(double *solution, const double *work, int n, int nrhs, int row_major) {
+    size_t count = (size_t)n * (size_t)nrhs;
+    if (row_major && nrhs > 1) {
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < nrhs; j++)
+                solution[(size_t)i * nrhs + j] = work[(size_t)j * n + i];
+    } else {
+        memcpy(solution, work, count * sizeof(double));
+    }
+}
+
+
+/* dgstrs on the held factors: memcpy into the held B, dgstrs with the held
+ * stat, memcpy out. When another solve holds the handle's B, this
+ * one runs over a B and a stat of its own (the 0.1.11 path). */
+static int slu_solve(superlu_factors_t *f, const double *rhs, double *solution,
+                     int nrhs, int row_major) {
     int info = 0;
+    int n = f->n;
 
-    /* Allocate SuperLU structures */
-    A = (SuperMatrix*)malloc(sizeof(SuperMatrix));
-    L = (SuperMatrix*)malloc(sizeof(SuperMatrix));
-    U = (SuperMatrix*)malloc(sizeof(SuperMatrix));
-    AC = (SuperMatrix*)malloc(sizeof(SuperMatrix));
-    options = (superlu_options_t*)malloc(sizeof(superlu_options_t));
-    stat = (SuperLUStat_t*)malloc(sizeof(SuperLUStat_t));
+    if (f->state != SN_OK) return f->state;
 
-    if (!A || !L || !U || !AC || !options || !stat) {
-        DEBUG_PRINT("Failed to allocate SuperLU structures");
-        status = -10;
-        goto cleanup;
-    }
-
-    A->Store = NULL;
-    L->Store = NULL;
-    U->Store = NULL;
-    AC->Store = NULL;
-
-    perm_r = (int*)malloc(nrows * sizeof(int));
-    perm_c = (int*)malloc(ncols * sizeof(int));
-    etree = (int*)malloc(ncols * sizeof(int));
-
-    if (!perm_r || !perm_c || !etree) {
-        DEBUG_PRINT("Failed to allocate permutation/etree arrays");
-        status = -11;
-        goto cleanup;
-    }
-
-    /* Copy the CSC arrays */
-    values_copy = (double*)malloc(nnz * sizeof(double));
-    rowind_copy = (int*)malloc(nnz * sizeof(int));
-    colptr_copy = (int*)malloc((ncols+1) * sizeof(int));
-
-    if (!values_copy || !rowind_copy || !colptr_copy) {
-        DEBUG_PRINT("Failed to allocate data arrays");
-        status = -12;
-        goto cleanup;
-    }
-
-    memcpy(values_copy, values, nnz * sizeof(double));
-    memcpy(rowind_copy, rowind, nnz * sizeof(int));
-    memcpy(colptr_copy, colptr, (ncols+1) * sizeof(int));
-
-    /* Build SuperMatrix A in CSC (NC) format */
-    {
-        NCformat *Astore = (NCformat*)malloc(sizeof(NCformat));
-        if (!Astore) {
-            DEBUG_PRINT("Failed to allocate A.Store");
-            status = -20;
-            goto cleanup;
+    if (!__atomic_test_and_set(&f->busy, __ATOMIC_ACQUIRE)) {
+        if (nrhs > f->bcols) {
+            /* grown once to the widest solve seen; never shrunk */
+            double *wider = (double*)realloc(f->bbuf, (size_t)n * (size_t)nrhs * sizeof(double));
+            if (!wider) {
+                __atomic_clear(&f->busy, __ATOMIC_RELEASE);
+                return SN_ALLOC_FAILED;
+            }
+            f->bbuf = wider;
+            f->bcols = nrhs;
+            f->Bstore.nzval = wider;
         }
-        A->Stype = SLU_NC;
-        A->Dtype = SLU_D;
-        A->Mtype = SLU_GE;
-        A->nrow = nrows;
-        A->ncol = ncols;
-        A->Store = Astore;
-        Astore->nnz = nnz;
-        Astore->nzval = values_copy;
-        Astore->rowind = rowind_copy;
-        Astore->colptr = colptr_copy;
-    }
-
-    /* Set options */
-    set_default_options(options);
-    options->ColPerm = NATURAL;
-    options->PrintStat = NO;
-
-    /* Initialize stat */
-    StatInit(stat);
-
-    /* Initialize permutation arrays */
-    for (int i = 0; i < nrows; i++) perm_r[i] = i;
-    for (int i = 0; i < ncols; i++) perm_c[i] = i;
-
-    /* Step 1: Column permutation */
-    get_perm_c(options->ColPerm, A, perm_c);
-
-    /* Step 2: Pre-order the matrix */
-    sp_preorder(options, A, perm_c, etree, AC);
-
-    /* Step 3: LU factorization */
-    {
-        int panel_size = sp_ienv(1);
-        int relax = sp_ienv(2);
-        GlobalLU_t Glu;
-        memset(&Glu, 0, sizeof(GlobalLU_t));
-
-        dgstrf(options, AC, relax, panel_size, etree,
-               NULL, 0,  /* work=NULL, lwork=0 => SuperLU allocates internally */
-               perm_c, perm_r, L, U, &Glu, stat, &info);
+        f->B.ncol = nrhs;
+        slu_copy_in(f->bbuf, rhs, n, nrhs, row_major);
+        dgstrs(NOTRANS, &f->L, &f->U, f->perm_c, f->perm_r, &f->B, &f->stat, &info);
+        if (info == 0) slu_copy_out(solution, f->bbuf, n, nrhs, row_major);
+        __atomic_clear(&f->busy, __ATOMIC_RELEASE);
+    } else {
+        SuperMatrix B;
+        DNformat Bstore;
+        SuperLUStat_t stat;
+        double *work = (double*)malloc((size_t)n * (size_t)nrhs * sizeof(double));
+        if (!work) {
+            DEBUG_PRINT("Failed to allocate rhs_copy");
+            return SN_ALLOC_FAILED;
+        }
+        slu_copy_in(work, rhs, n, nrhs, row_major);
+        B.Stype = SLU_DN;
+        B.Dtype = SLU_D;
+        B.Mtype = SLU_GE;
+        B.nrow = n;
+        B.ncol = nrhs;
+        B.Store = &Bstore;
+        Bstore.lda = n;
+        Bstore.nzval = work;
+        StatInit(&stat);
+        dgstrs(NOTRANS, &f->L, &f->U, f->perm_c, f->perm_r, &B, &stat, &info);
+        StatFree(&stat);
+        if (info == 0) slu_copy_out(solution, work, n, nrhs, row_major);
+        free(work);
     }
 
     if (info != 0) {
-        if (info < 0) {
-            DEBUG_PRINT("SuperLU dgstrf: Argument %d had an illegal value", -info);
-        } else if (info <= ncols) {
-            DEBUG_PRINT("SuperLU dgstrf: U(%d,%d) is exactly zero (singular)", info, info);
-        } else {
-            DEBUG_PRINT("SuperLU dgstrf: Memory allocation failed: %d", info - ncols);
-        }
-        status = info;
-        goto cleanup;
+        DEBUG_PRINT("SuperLU dgstrs failed with info = %d", info);
+        return SN_BACKEND_ERROR;
     }
-
-    /* Success: package factors into handle */
-    factors = (superlu_factors_t*)malloc(sizeof(superlu_factors_t));
-    if (!factors) {
-        DEBUG_PRINT("Failed to allocate factors struct");
-        status = -30;
-        goto cleanup;
-    }
-
-    factors->L = L;
-    factors->U = U;
-    factors->perm_r = perm_r;
-    factors->perm_c = perm_c;
-    factors->nrows = nrows;
-    factors->ncols = ncols;
-
-    /* Transfer ownership: set to NULL so cleanup doesn't free them */
-    L = NULL;
-    U = NULL;
-    perm_r = NULL;
-    perm_c = NULL;
-
-    *handle_out = (int64_t)(intptr_t)factors;
-    status = 0;
-
-cleanup:
-    /* Free stat */
-    if (stat) {
-        StatFree(stat);
-        free(stat);
-    }
-
-    /* Free AC (the pre-ordered copy) */
-    if (AC && AC->Store) {
-        Destroy_CompCol_Permuted(AC);
-    }
-    if (AC) free(AC);
-
-    /* Free L and U only if NOT transferred to handle (i.e., on error) */
-    if (L && L->Store) {
-        Destroy_SuperNode_Matrix(L);
-    }
-    if (L) free(L);
-
-    if (U && U->Store) {
-        Destroy_CompCol_Matrix(U);
-    }
-    if (U) free(U);
-
-    /* Free A matrix - don't let it free our data copies */
-    if (A && A->Store) {
-        NCformat *Astore = (NCformat*)A->Store;
-        Astore->nzval = NULL;
-        Astore->rowind = NULL;
-        Astore->colptr = NULL;
-        free(A->Store);
-    }
-    if (A) free(A);
-
-    if (options) free(options);
-    if (etree) free(etree);
-
-    /* Free perm arrays only if NOT transferred to handle */
-    if (perm_r) free(perm_r);
-    if (perm_c) free(perm_c);
-
-    /* Free data copies (A matrix consumed them, but we nulled the pointers above) */
-    if (values_copy) free(values_copy);
-    if (rowind_copy) free(rowind_copy);
-    if (colptr_copy) free(colptr_copy);
-
-    return status;
+    return SN_OK;
 }
 
 
 int solve_with_factors(int64_t handle, double *rhs, double *solution, int nrhs) {
-
-    if (!handle || !rhs || !solution) {
+    void *p = NULL;
+    int code = sn_lookup(handle, &p);
+    superlu_factors_t *f = (superlu_factors_t*)p;
+    if (code != SN_OK) return code;
+    if (!rhs || !solution || nrhs <= 0) {
         DEBUG_PRINT("Error: NULL pointer passed to solve_with_factors");
-        return -1;
+        return SN_BAD_SHAPE;
     }
+    return slu_solve(f, rhs, solution, nrhs, 0);
+}
 
-    superlu_factors_t *factors = (superlu_factors_t*)(intptr_t)handle;
-    int nrows = factors->nrows;
 
-    SuperMatrix *B = NULL;
-    SuperLUStat_t *stat = NULL;
-    double *rhs_copy = NULL;
-    int status = -99;
-    int info = 0;
+int solve_into_with_factors(int64_t handle, double *rhs, double *solution,
+                            int n, int nrhs) {
+    void *p = NULL;
+    int code = sn_lookup(handle, &p);
+    superlu_factors_t *f = (superlu_factors_t*)p;
+    if (code != SN_OK) return code;
+    if (!rhs || !solution || nrhs <= 0 || n != f->n) return SN_BAD_SHAPE;
+    return slu_solve(f, rhs, solution, nrhs, 1);
+}
 
-    /* Allocate */
-    B = (SuperMatrix*)malloc(sizeof(SuperMatrix));
-    stat = (SuperLUStat_t*)malloc(sizeof(SuperLUStat_t));
 
-    if (!B || !stat) {
-        DEBUG_PRINT("Failed to allocate structures in solve_with_factors");
-        status = -10;
-        goto cleanup;
-    }
-
-    B->Store = NULL;
-
-    /* Copy RHS (dgstrs overwrites B in place) */
-    rhs_copy = (double*)malloc(nrows * nrhs * sizeof(double));
-    if (!rhs_copy) {
-        DEBUG_PRINT("Failed to allocate rhs_copy");
-        status = -12;
-        goto cleanup;
-    }
-    memcpy(rhs_copy, rhs, nrows * nrhs * sizeof(double));
-
-    /* Build SuperMatrix B */
-    {
-        DNformat *Bstore = (DNformat*)malloc(sizeof(DNformat));
-        if (!Bstore) {
-            DEBUG_PRINT("Failed to allocate B.Store");
-            status = -21;
-            goto cleanup;
-        }
-        B->Stype = SLU_DN;
-        B->Dtype = SLU_D;
-        B->Mtype = SLU_GE;
-        B->nrow = nrows;
-        B->ncol = nrhs;
-        B->Store = Bstore;
-        Bstore->lda = nrows;
-        Bstore->nzval = rhs_copy;
-    }
-
-    StatInit(stat);
-
-    /* Triangular solve using pre-computed L, U factors */
-    dgstrs(NOTRANS, factors->L, factors->U,
-           factors->perm_c, factors->perm_r,
-           B, stat, &info);
-
-    if (info != 0) {
-        DEBUG_PRINT("SuperLU dgstrs failed with info = %d", info);
-        status = info;
-    } else {
-        /* Copy solution from B */
-        double *sol_ptr = (double*)((DNformat*)B->Store)->nzval;
-        for (int i = 0; i < nrows * nrhs; i++) {
-            solution[i] = sol_ptr[i];
-        }
-        status = 0;
-    }
-
-cleanup:
-    if (stat) {
-        StatFree(stat);
-        free(stat);
-    }
-
-    if (B && B->Store) {
-        DNformat *Bstore = (DNformat*)B->Store;
-        Bstore->nzval = NULL;  /* Don't free rhs_copy here */
-        free(B->Store);
-    }
-    if (B) free(B);
-
-    if (rhs_copy) free(rhs_copy);
-
-    return status;
+int sparse_factors_info(int64_t handle, int64_t *iout, double *dout) {
+    void *p = NULL;
+    int code = sn_lookup(handle, &p);
+    superlu_factors_t *f = (superlu_factors_t*)p;
+    if (code != SN_OK) return code;
+    if (!iout || !dout) return SN_BAD_SHAPE;
+    iout[SN_INFO_N] = f->n;
+    iout[SN_INFO_NNZ_L] = f->have_lu ? ((SCformat*)f->L.Store)->nnz : 0;
+    iout[SN_INFO_NNZ_U] = f->have_lu ? ((NCformat*)f->U.Store)->nnz : 0;
+    iout[SN_INFO_BACKEND] = SN_THIS_BACKEND;
+    iout[SN_INFO_ORDERING] = f->ordering;
+    iout[SN_INFO_LAST_STATUS] = f->last_status;
+    dout[SN_DINFO_PIVOT_TOLERANCE] = f->options.DiagPivotThresh;
+    return SN_OK;
 }
 
 
 int free_sparse_factors(int64_t handle) {
+    void *p = NULL;
+    int code = sn_release(handle, &p);
+    if (code != SN_OK) return code;
+    slu_destroy((superlu_factors_t*)p);
+    return SN_OK;
+}
 
-    if (!handle) {
-        DEBUG_PRINT("Error: NULL handle passed to free_sparse_factors");
-        return -1;
-    }
 
-    superlu_factors_t *factors = (superlu_factors_t*)(intptr_t)handle;
-
-    /* Free L and U matrices */
-    if (factors->L && factors->L->Store) {
-        Destroy_SuperNode_Matrix(factors->L);
-    }
-    if (factors->L) free(factors->L);
-
-    if (factors->U && factors->U->Store) {
-        Destroy_CompCol_Matrix(factors->U);
-    }
-    if (factors->U) free(factors->U);
-
-    /* Free permutation arrays */
-    if (factors->perm_r) free(factors->perm_r);
-    if (factors->perm_c) free(factors->perm_c);
-
-    /* Free the struct itself */
-    free(factors);
-
-    return 0;
+/* The SuperLU version (the headers' SUPERLU_*_VERSION, slu_util.h: the
+ * library is called through those headers) and this shim's build facts
+ * (sparse_numba_registry.h: the compiler, its code-generation flags, and
+ * setup.py's compile flags as SN_BUILD_FLAGS), for cache_key() */
+const char *superlu_build_info(void) {
+    return SN_STR(SUPERLU_MAJOR_VERSION) "." SN_STR(SUPERLU_MINOR_VERSION) "."
+           SN_STR(SUPERLU_PATCH_VERSION) "," SN_BUILD_FACTS;
 }
