@@ -46,18 +46,13 @@ SUPPORTED = {
 REFUSED = {"superlu": ("AMD",), "umfpack": ("MMD_AT_PLUS_A",)}
 
 
-def _part(n):
-    return pytest.mark.xfail(strict=True, reason=f"SN-3 part {n}")
-
-
 def _params(matrices=None):
     out = []
     for backend, orderings in SUPPORTED.items():
         for ordering, part in orderings.items():
             for matrix in (matrices or [None]):
                 values = (backend, ordering) if matrix is None else (backend, ordering, matrix)
-                marks = [] if part is None else [_part(part)]
-                out.append(pytest.param(*values, marks=marks))
+                out.append(pytest.param(*values))
     return out
 
 

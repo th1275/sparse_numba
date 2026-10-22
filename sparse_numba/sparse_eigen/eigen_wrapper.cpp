@@ -27,10 +27,10 @@
 #include <Eigen/SparseCholesky>
 
 #ifndef EIGEN_MPL2_ONLY
-#error "the Eigen shim is built with -DEIGEN_MPL2_ONLY (REQUIREMENT sec 7.1 Q8 A)"
+#error "the Eigen shim is built with -DEIGEN_MPL2_ONLY (only the MPL2-licensed parts of Eigen)"
 #endif
 #ifndef EIGEN_DONT_PARALLELIZE
-#error "the Eigen shim is built with -DEIGEN_DONT_PARALLELIZE (REQUIREMENT sec 3.3)"
+#error "the Eigen shim is built with -DEIGEN_DONT_PARALLELIZE (every backend is single-threaded)"
 #endif
 
 #define SN_REGISTRY_FIRST SN_BACKEND_EIGEN_LU

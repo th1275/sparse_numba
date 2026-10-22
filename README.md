@@ -86,7 +86,9 @@ MinGW links with `-Wl,--no-insert-timestamp` (a rebuild of unchanged
 source gives the same extension bytes). The flags compiled in are part of
 `cache_key()`.
 
-More: the [user guide](docs/USER_GUIDE.md) (its parts 1, Install, and 8, UMFPACK's library).
+More: the [installation guide](docs/Installation_Guide_for_sparse_numba.md) (wheels,
+UMFPACK, building from source, checking the install) and the
+[user guide](docs/USER_GUIDE.md) (its parts 1, Install, and 8, UMFPACK's library).
 
 ## The API
 

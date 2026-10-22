@@ -41,7 +41,8 @@ sn.require(sn.UMFPACK)          # raises SparseNumbaError with an install hint i
 
 Importing sparse_numba prints nothing and loads no optional library; an
 absent backend is reported by its calls (`BACKEND_ABSENT`) and by
-`backends()` / `require()`.
+`backends()` / `require()`. Building from source and the platform
+packages: the [installation guide](Installation_Guide_for_sparse_numba.md).
 
 ## 2 Backends
 

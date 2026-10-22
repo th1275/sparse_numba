@@ -907,7 +907,7 @@ def environment(build_log):
         "eigen_sha256sums_head": eigen_head,
         "extensions": extensions, "vendored_dlls_sha256": dlls,
         "prebuilt_libraries": "libsuperlu-7.dll, libopenblas.dll and the user's SuiteSparse keep "
-                              "their own build flags (REQUIREMENT sec 3.3, 7.1 Q10 A); only the "
+                              "their own build flags (they are prebuilt, not rebuilt here); only the "
                               "shims are compiled by setup.py",
         "extra_cflags_env": os.environ.get("SPARSE_NUMBA_EXTRA_CFLAGS"),
         "debug_env": os.environ.get("SPARSE_NUMBA_DEBUG"),

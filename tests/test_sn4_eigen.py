@@ -60,10 +60,6 @@ EIGEN_ROWS = (
 )
 
 
-def _part(n):
-    return pytest.mark.xfail(strict=True, reason=f"SN-4 part {n}")
-
-
 def _api():
     import sparse_numba.api as api
     return api

@@ -513,8 +513,6 @@ if IS_WINDOWS:
         'sparse_superlu/*.pyd',
         'sparse_umfpack/*.pyd',
         'sparse_eigen/*.pyd',
-        'sparse_superlu/test/*.py',
-        'sparse_umfpack/test/*.py',
         'conversion/*.py'
     ]
 elif IS_LINUX:
@@ -524,8 +522,6 @@ elif IS_LINUX:
         'sparse_umfpack/*.so',
         'sparse_umfpack/cy_umfpack_wrapper*.so',  # More specific pattern
         'sparse_eigen/cy_eigen_wrapper*.so',
-        'sparse_superlu/test/*.py',
-        'sparse_umfpack/test/*.py',
         'conversion/*.py'
     ]
 elif IS_MACOS:
@@ -535,8 +531,6 @@ elif IS_MACOS:
         'sparse_umfpack/*.so',
         'sparse_umfpack/*.dylib',
         'sparse_eigen/*.so',
-        'sparse_superlu/test/*.py',
-        'sparse_umfpack/test/*.py',
         'conversion/*.py'
     ]
 
@@ -545,9 +539,7 @@ packages=[
         'sparse_numba',
         'sparse_numba.conversion',
         'sparse_numba.sparse_superlu',
-        'sparse_numba.sparse_superlu.test',
         'sparse_numba.sparse_umfpack',
-        'sparse_numba.sparse_umfpack.test',
         'sparse_numba.sparse_eigen',
     ]
 
